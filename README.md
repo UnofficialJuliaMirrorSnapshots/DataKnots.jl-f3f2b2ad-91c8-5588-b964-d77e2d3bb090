@@ -4,15 +4,9 @@
 an extensible, practical and coherent algebra of query
 combinators.*
 
-At this time, while we welcome feedback and contributions,
-DataKnots is not yet usable for general audiences.
-
-[![Linux/OSX Build Status][travis-img]][travis-url]
-[![Windows Build Status][appveyor-img]][appveyor-url]
-[![Code Coverage Status][codecov-img]][codecov-url]
-[![Open Issues][issues-img]][issues-url]
-[![Documentation][doc-dev-img]][doc-dev-url]
-[![MIT License][license-img]][license-url]
+**Documentation** | **Build Status** | **Process**
+:---: | :---: | :---:
+[![Stable Documentation][doc-rel-img]][doc-rel-url] [![Development Documentation][doc-dev-img]][doc-dev-url] | [![Linux/OSX Build Status][travis-img]][travis-url] [![Windows Build Status][appveyor-img]][appveyor-url] [![Code Coverage Status][codecov-img]][codecov-url] | [![Chat on Gitter][gitter-img]][gitter-url] [![Open Issues][issues-img]][issues-url] [![MIT License][license-img]][license-url]
 
 DataKnots is designed to let data analysts and other
 accidental programmers query and analyze complex
@@ -66,13 +60,56 @@ you need to install it in development mode with:
 pkg> dev https://github.com/rbt-lang/DataKnots.jl
 ```
 
+## Showcase
+
+Let's take some Chicago public data and convert it into a *knot*.
+
+    using DataKnots, CSV
+
+    chicago_data = """
+        name,department,position,salary,rate
+        "JEFFERY A", "POLICE", "SERGEANT", 101442,
+        "NANCY A", "POLICE", "POLICE OFFICER", 80016,
+        "JAMES A", "FIRE", "FIRE ENGINEER-EMT", 103350,
+        "DANIEL A", "FIRE", "FIRE FIGHTER-EMT", 95484,
+        "BRENDA B", "OEMC", "TRAFFIC CONTROL AIDE", 64392,
+        "LAKENYA A", "OEMC", "CROSSING GUARD", , 17.68
+        "DORIS A", "OEMC", "CROSSING GUARD", , 19.38
+        """
+    file = CSV.File(IOBuffer(chicago_data), allowmissing=:auto)
+    knot = DataKnot(:employee => file)
+
+We could then query this data to return employees with salaries
+greater than their department's average.
+
+    using Statistics: mean
+
+    knot[It.employee >>
+         Group(It.department) >>
+         Keep(:avg_salary => mean.(It.employee.salary)) >>
+         It.employee >>
+         Filter(It.salary .> It.avg_salary)]
+     #=>
+       │ employee                                               │
+       │ name       department  position           salary  rate │
+     ──┼────────────────────────────────────────────────────────┼
+     1 │ JAMES A    FIRE        FIRE ENGINEER-EMT  103350       │
+     2 │ JEFFERY A  POLICE      SERGEANT           101442       │
+     =#
+
+Note: this showcase only works in development branch; use
+`Tables.jl` interface will be in v0.3.
+
 ## Support
+
+At this time, while we welcome feedback and contributions,
+DataKnots is not yet usable for general audiences.
 
 Our development chat is currently hosted on Gitter:
 https://gitter.im/rbt-lang/rbt-proto
 
 Current documentation could be found at:
-https://rbt-lang.github.io/DataKnots.jl/dev/
+https://rbt-lang.github.io/DataKnots.jl/stable/
 
 [travis-img]: https://travis-ci.org/rbt-lang/DataKnots.jl.svg?branch=master
 [travis-url]: https://travis-ci.org/rbt-lang/DataKnots.jl
@@ -82,8 +119,12 @@ https://rbt-lang.github.io/DataKnots.jl/dev/
 [codecov-url]: https://codecov.io/gh/rbt-lang/DataKnots.jl
 [issues-img]: https://img.shields.io/github/issues/rbt-lang/DataKnots.jl.svg
 [issues-url]: https://github.com/rbt-lang/DataKnots.jl/issues
-[doc-dev-img]: https://img.shields.io/badge/doc-dev-blue.svg
+[doc-dev-img]: https://img.shields.io/badge/docs-dev-blue.svg
+[doc-rel-img]: https://img.shields.io/badge/docs-stable-green.svg
 [doc-dev-url]: https://rbt-lang.github.io/DataKnots.jl/dev/
-[license-img]: https://img.shields.io/badge/license-MIT%2FApache%202-blue.svg
+[doc-rel-url]: https://rbt-lang.github.io/DataKnots.jl/stable/
+[license-img]: https://img.shields.io/badge/license-MIT-brightgreen.svg
 [license-url]: https://raw.githubusercontent.com/rbt-lang/DataKnots.jl/master/LICENSE.md
+[gitter-img]: https://img.shields.io/gitter/room/rbt-lang/rbt-proto.svg?color=%23753a88
+[gitter-url]: https://gitter.im/rbt-lang/rbt-proto/
 [Query Combinators]: https://arxiv.org/abs/1702.08409

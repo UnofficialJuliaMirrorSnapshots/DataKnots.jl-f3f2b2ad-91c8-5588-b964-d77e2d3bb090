@@ -8,28 +8,27 @@ performed upon a simplified in-memory dataset.
 ## Getting Started
 
 Consider a tiny cross-section of public data from Chicago,
-represented as nested `NamedTuple` and `Vector` objects.
+represented as nested `Vector` and `NamedTuple` objects.
 
-    chicago_data =
-      (department = [
-        (name = "POLICE",
-         employee = [
-          (name = "ANTHONY A", position = "POLICE OFFICER", salary = 72510),
-          (name = "JEFFERY A", position = "SERGEANT", salary = 101442),
-          (name = "NANCY A", position = "POLICE OFFICER", salary = 80016)]),
-        (name = "FIRE",
-         employee = [
-          (name = "DANIEL A", position = "FIREFIGHTER-EMT", salary = 95484),
-          (name = "ROBERT K", position = "FIREFIGHTER-EMT", salary = 103272)])],)
+    department_data = [
+      (name = "POLICE",
+       employee = [
+        (name = "ANTHONY A", position = "POLICE OFFICER", salary = 72510),
+        (name = "JEFFERY A", position = "SERGEANT", salary = 101442),
+        (name = "NANCY A", position = "POLICE OFFICER", salary = 80016)]),
+      (name = "FIRE",
+       employee = [
+        (name = "DANIEL A", position = "FIREFIGHTER-EMT", salary = 95484),
+        (name = "ROBERT K", position = "FIREFIGHTER-EMT", salary = 103272)])]
 
-In this hierarchical Chicago dataset, the root is a `NamedTuple`
-with a field `department`, which is a `Vector` of department
-records, and so on.
+This hierarchical dataset contains a list of departments, with
+each department containing associated employees.
 
 To query this dataset, we convert it into a `DataKnot`, or *knot*.
 
     using DataKnots
-    chicago = convert(DataKnot, chicago_data)
+
+    chicago = DataKnot(:department => department_data)
 
 ## Our First Query
 
@@ -311,7 +310,7 @@ the period is an easy mistake to make.
         Record(It.name, EmployeeCount) >>
         Filter(It.employee_count > 2)]
     #=>
-    ERROR: MethodError: no method matching isless(::Int, ::DataKnots.Navigation)
+    ERROR: MethodError: no method matching isless(::Int64, ::DataKnots.Navigation)
     ⋮
     =#
 
@@ -993,9 +992,77 @@ is an `AbstractVector` specialized for column-oriented storage.
     vt = get(chicago[query])
     display(vt)
     #=>
-    @VectorTree of 2 × (name = (1:1) × String, employee_count = (1:1) × Int):
+    @VectorTree of 2 × (name = (1:1) × String, employee_count = (1:1) × Int64):
      (name = "POLICE", employee_count = 3)
      (name = "FIRE", employee_count = 2)
     =#
 
+## Importing & Exporting Data
+
+We can import data directly from systems that support the `Tables.jl`
+interface. Here is a tabular variant of the chicago dataset.
+
+    using CSV
+
+    employee_csv = """
+        name,department,salary,rate
+        "JEFFERY A", "POLICE", 101442,
+        "NANCY A", "POLICE", 80016,
+        "JAMES A", "FIRE", 103350,
+        "DANIEL A", "FIRE", 95484,
+        "BRENDA B", "OEMC", 64392,
+        "LAKENYA A", "OEMC", , 17.68
+        "DORIS A", "OEMC", , 19.38
+        """ |> IOBuffer
+
+    employee_data = CSV.File(employee_csv, allowmissing=:auto)
+
+    chicago = DataKnot(:employee => employee_data)
+
+    chicago[It.employee]
+    #=>
+      │ employee                             │
+      │ name       department  salary  rate  │
+    ──┼──────────────────────────────────────┼
+    1 │ JEFFERY A  POLICE      101442        │
+    2 │ NANCY A    POLICE       80016        │
+    3 │ JAMES A    FIRE        103350        │
+    4 │ DANIEL A   FIRE         95484        │
+    5 │ BRENDA B   OEMC         64392        │
+    6 │ LAKENYA A  OEMC                17.68 │
+    7 │ DORIS A    OEMC                19.38 │
+    =#
+
+This tabular data could be filtered to show employees that are paid
+more than average.
+
+    using Statistics: mean
+
+    highly_compensated = 
+         chicago[Keep(:avg_salary => mean.(It.employee.salary)) >>
+                 It.employee >>
+                 Filter(It.salary .> It.avg_salary)]
+    #=>
+      │ employee                            │
+      │ name       department  salary  rate │
+    ──┼─────────────────────────────────────┼
+    1 │ JEFFERY A  POLICE      101442       │
+    2 │ JAMES A    FIRE        103350       │
+    3 │ DANIEL A   FIRE         95484       │
+    =#
+
+We can then export this data.
+
+    using DataFrames
+
+    highly_compensated |> DataFrame
+    #=>
+    3×4 DataFrames.DataFrame
+    │ Row │ name      │ department │ salary │ rate     │
+    │     │ String    │ String     │ Int64⍰ │ Float64⍰ │
+    ├─────┼───────────┼────────────┼────────┼──────────┤
+    │ 1   │ JEFFERY A │ POLICE     │ 101442 │ missing  │
+    │ 2   │ JAMES A   │ FIRE       │ 103350 │ missing  │
+    │ 3   │ DANIEL A  │ FIRE       │ 95484  │ missing  │
+    =#
 

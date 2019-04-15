@@ -58,12 +58,33 @@ query is also a `DataKnot` object.
     │ 12 │
     =#
 
-## Reading CSV Files
+To place several datasets into a single `DataKnot` we use a
+special constructor that takes datasets with their names.
 
-Consider a Comma Separated Variable ("CSV") file of employee data
-from the city of Chicago.
+    sets = DataKnot(:main=>'a':'c', :more=>"data")
+    #=>
+    │ main     more │
+    ┼───────────────┼
+    │ a; b; c  data │
+    =#
 
-    data = IOBuffer("""
+A specific dataset could be focused by navigating.
+
+    sets[It.main]
+    #=>
+      │ main │
+    ──┼──────┼
+    1 │ a    │
+    2 │ b    │
+    3 │ c    │
+    =#
+
+## Importing & Exporting
+
+We support the conversion to/from objects with the `Tables.jl`
+interface. For example, we could import CSV data.
+
+    chicago_data = IOBuffer("""
     name,department,position,salary,rate
     "JEFFERY A", "POLICE", "SERGEANT", 101442,
     "NANCY A", "POLICE", "POLICE OFFICER", 80016,
@@ -73,14 +94,13 @@ from the city of Chicago.
     "DORIS A", "OEMC", "CROSSING GUARD", , 19.38
     """)
 
-This could be parsed using the `CSV` library and then converted
-into a DataKnot.
+    chicago_file = CSV.File(chicago_data, allowmissing=:auto)
 
-    file = CSV.File(data, allowmissing=:auto)
-    knot = DataKnot(:table => file)
-    knot[It.table]
+    chicago = DataKnot(:employee => chicago_file)
+
+    chicago[It.employee]
     #=>
-      │ table                                                   │
+      │ employee                                                │
       │ name       department  position           salary  rate  │
     ──┼─────────────────────────────────────────────────────────┼
     1 │ JEFFERY A  POLICE      SERGEANT           101442        │
@@ -91,20 +111,22 @@ into a DataKnot.
     6 │ DORIS A    OEMC        CROSSING GUARD             19.38 │
     =#
 
-If the `CSV` file has exactly one row, cardinality
-could be provided to indicate this.
+This knot could then be queried and exported to a `DataFrame`.
 
-    data = IOBuffer("""
-    name,department,position,salary
-    "JEFFERY A", "POLICE", "SERGEANT", 101442
-    """)
-    file = CSV.File(data)
-    knot = fromtable(file, :x1to1)
-    knot[It.salary]
+    chicago[It.employee >>
+            Record(It.name, It.department, It.salary)
+           ] |> DataFrame
     #=>
-    │ salary │
-    ┼────────┼
-    │ 101442 │
+    6×3 DataFrames.DataFrame
+    │ Row │ name      │ department │ salary  │
+    │     │ String    │ String     │ Int64⍰  │
+    ├─────┼───────────┼────────────┼─────────┤
+    │ 1   │ JEFFERY A │ POLICE     │ 101442  │
+    │ 2   │ NANCY A   │ POLICE     │ 80016   │
+    │ 3   │ JAMES A   │ FIRE       │ 103350  │
+    │ 4   │ DANIEL A  │ FIRE       │ 95484   │
+    │ 5   │ LAKENYA A │ OEMC       │ missing │
+    │ 6   │ DORIS A   │ OEMC       │ missing │
     =#
 
 ## API Reference
@@ -230,13 +252,13 @@ A `Ref` object is converted into the referenced value.
 
     int_ty = convert(DataKnot, Base.broadcastable(Int))
     #=>
-    │ It  │
-    ┼─────┼
-    │ Int │
+    │ It    │
+    ┼───────┼
+    │ Int64 │
     =#
 
     shape(int_ty)
-    #-> ValueOf(Type{Int})
+    #-> ValueOf(Type{Int64})
 
 ### Rendering
 
@@ -347,11 +369,11 @@ decimal point.
     2 │  2.65 │
     =#
 
-### Exporting DataKnots via Tables
+### Exporting via Table.jl Interface
 
-The export logic of DataKnots depends upon the kind of the top-level
-entity. If the data is an array of tuples, then DataKnots delegates to
-`Tables.RowTable` for conversion.
+When a knot has a tabular form, it can be exported via `Tables.jl`.
+
+This is the case when a `DataKnot` wraps a vector of named tuples.
 
     table = convert(DataKnot, [(x="A", y=1.0), (x="B", y=2.0)])
 
@@ -365,79 +387,32 @@ entity. If the data is an array of tuples, then DataKnots delegates to
     Tables.columns(table)
     #-> (x = ["A", "B"], y = [1.0, 2.0])
 
-This case also handles when the data is a lone NamedTuple.
+    Tables.istable(table)
+    #-> true
 
-    Tables.schema(unitknot[(hello="World",)])
-    #=>
-    Tables.Schema:
-     :hello  String
-    =#
+    Tables.columnaccess(table)
+    #-> true
 
-    Tables.columns(unitknot[(hello="World",)])
-    #-> (hello = ["World"],)
+A plural set of records will also be treated as a table.
 
-In many other cases, internal data conversion converts our TupleVector
-into what's needed by the `Tables.jl` interface.
-
-    Tables.schema(unitknot[Record(:hello=>"World")])
-    #=>
-    Tables.Schema:
-     :hello  String
-    =#
-
-    Tables.columns(unitknot[Record(:hello=>"World")])
-    #-> (hello = @VectorTree (1:1) × String ["World"],)
-
-    Tables.columns(unitknot[Lift(1:3)])
-    #-> (it = 1:3,)
-
-    table = unitknot[Lift(1:3) >>
-                     Record(:idx => string.(It),
-                            :val => It./2)]
+    table = unitknot[Lift(1:3) >> Record(:idx => It, :val => "Test")]
 
     Tables.schema(table)
     #=>
     Tables.Schema:
-     :idx  String
-     :val  Float64
+     :idx  Int64
+     :val  String
     =#
 
     Tables.columns(table)[:idx]
-    #-> @VectorTree (1:1) × String ["1", "2", "3"]
+    #-> @VectorTree (1:1) × Int64 [1, 2, 3]
 
     Tables.columns(table)[:val]
-    #-> @VectorTree (1:1) × Float64 [0.5, 1.0, 1.5]
+    #-> @VectorTree (1:1) × String ["Test", "Test", "Test"]
 
-Otherwise, the wrapped data is converted into a table with a single
-column, `it`.
+    Tables.istable(table)
+    #-> true
 
-    Tables.schema(unitknot)
-    #=>
-    Tables.Schema:
-     :it  Nothing
-    =#
+    Tables.columnaccess(table)
+    #-> true
 
-    Tables.columns(unitknot)
-    #-> (it = Nothing[nothing],)
-
-An array of values is handled quite nicely by this method.
-
-    Tables.schema(unitknot[["A", "B"]])
-    #=>
-    Tables.Schema:
-     :it  String
-    =#
-
-    Tables.columns(unitknot[["A", "B"]])
-    #-> (it = ["A", "B"],)
-
-Tuple values, work, but not as separate columns.
-
-    Tables.schema(unitknot[("A", "B")])
-    #=>
-    Tables.Schema:
-     :it  Tuple{String,String}
-    =#
-
-    Tables.columns(unitknot[("A", "B")])
-    #-> (it = Tuple{String,String}[("A", "B")],)

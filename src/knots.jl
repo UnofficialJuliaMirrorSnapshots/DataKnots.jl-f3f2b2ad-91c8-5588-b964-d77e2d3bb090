@@ -14,19 +14,34 @@ import Base:
 #
 
 """
+    DataKnot(Pair{Symbol}...)
+
+This constructor binds names to datasets, so that they
+could be used to start a query. The knot created has a
+single top-level record, each with its own value.
+
+```jldoctest
+julia> test_knot = DataKnot(:dataset=>'a':'c')
+│ dataset │
+┼─────────┼
+│ a; b; c │
+
+julia> test_knot[It.dataset]
+  │ dataset │
+──┼─────────┼
+1 │ a       │
+2 │ b       │
+3 │ c       │
+```
+
+Arguments to this constructor are run though `convert`.
+
+---
+
     convert(DataKnot, val)
 
 This converter wraps a given value so that it could be used to
 start a query.
-
-The unit knot holds the value `nothing`.
-
-```jldoctest
-julia> convert(DataKnot, nothing)
-│ It │
-┼────┼
-│    │
-```
 
 An empty knot can be constructed with `missing`.
 
@@ -47,13 +62,21 @@ julia> convert(DataKnot, 'a':'c')
 3 │ c  │
 ```
 
-It's often useful to wrap a dataset in a one-field tuple.
+An object that complies with the `Table` interface, such as
+a `CSV` file, can be converted to a DataKnot.
 
 ```jldoctest
-julia> convert(DataKnot, (dataset='a':'c',))
-│ dataset │
-┼─────────┼
-│ a; b; c │
+julia> using CSV;
+
+julia> data_source = "k,v\\na,1\\nb" |> IOBuffer;
+
+julia> data_file = CSV.File(data_source, allowmissing=:auto);
+
+julia> convert(DataKnot, data_file)
+  │ k  v │
+──┼──────┼
+1 │ a  1 │
+2 │ b    │
 ```
 
 ---
@@ -107,12 +130,23 @@ DataKnot(T::Type, cell::AbstractVector) =
 DataKnot(::Type{Any}, cell::AbstractVector) =
     DataKnot(shapeof(cell), cell)
 
-DataKnot(::Type{Any}, elts::AbstractVector, card::Union{Cardinality,Symbol}) =
-    let card = convert(Cardinality, card),
-        shp = BlockOf(shapeof(elts), card),
-        cell = BlockVector{card}([1, length(elts)+1], elts)
-        DataKnot(shp, cell)
-    end
+function DataKnot(::Type{Any}, elts::AbstractVector, card::Union{Cardinality,Symbol})
+    card = convert(Cardinality, card)
+    shp = BlockOf(shapeof(elts), card)
+    cell = BlockVector{card}([1, length(elts)+1], elts)
+    return DataKnot(shp, cell)
+end
+
+DataKnot() =
+    DataKnot(Any, [nothing])
+
+function DataKnot(ps::Pair{Symbol}...)
+    lbls = collect(first.(ps))
+    cols = collect(convert.(DataKnot, last.(ps)))
+    vals = collect(AbstractVector, cell.(cols))
+    shp = TupleOf(lbls, shape.(cols))
+    return DataKnot(shp, TupleVector(lbls, 1, vals))
+end
 
 convert(::Type{DataKnot}, db::DataKnot) = db
 
@@ -132,18 +166,32 @@ convert(::Type{DataKnot}, elt) =
     if Tables.schema(elt) !== nothing
         fromtable(elt)
     else
-        DataKnot(Any, [elt]);
+        DataKnot(Any, [elt])
     end
 
-function DataKnot(ps::Pair{Symbol}...)
-    lbls = collect(first.(ps))
-    cols = collect(convert.(DataKnot, last.(ps)))
-    vals = collect(AbstractVector, cell.(cols))
-    shp = TupleOf(lbls, shape.(cols))
-    DataKnot(shp, TupleVector(lbls, 1, vals))
-end
+"""
+    unitknot
 
-const unitknot = convert(DataKnot, nothing)
+The unit knot holds the value `nothing`.
+
+```jldoctest
+julia> unitknot
+│ It │
+┼────┼
+│    │
+```
+
+The `unitknot` is useful for constructing queries that
+do not originate from another datasource.
+
+```jldoctest
+julia> unitknot["Hello"]
+│ It    │
+┼───────┼
+│ Hello │
+```
+"""
+const unitknot = DataKnot()
 
 get(db::DataKnot) = db.cell[1]
 
@@ -155,43 +203,32 @@ quoteof(db::DataKnot) =
     Symbol("DataKnot( … )")
 
 #
-# Interfaces.
+# Tables.jl interface.
 #
 
-Tables.istable(::Type{<:DataKnot}) = true
-Tables.columnaccess(::Type{<:DataKnot}) = true
+Tables.istable(knot::DataKnot) = Tables.istable(eltype(knot.cell))
+Tables.columnaccess(knot::DataKnot) = Tables.istable(knot)
+
 Tables.schema(knot::DataKnot) = cell_schema(knot.cell)
 Tables.columns(knot::DataKnot) = cell_columns(knot.cell)
-cell_schema(cell::TupleVector) = etls_schema(cell)
-cell_columns(cell::TupleVector) = etls_columns(cell)
-cell_schema(cell::AbstractVector) = etls_schema(cell)
-cell_columns(cell::AbstractVector) = etls_columns(cell)
-cell_schema(cell::BlockVector) = etls_schema(elements(cell))
-cell_columns(cell::BlockVector) = etls_columns(elements(cell))
-etls_schema(etls::Tables.RowTable) = Tables.schema(etls)
-etls_columns(etls::Tables.RowTable) = Tables.columns(etls)
-etls_schema(etls::AbstractVector) =
-    Tables.Schema((:it,), (typeof(etls[1]),))
-etls_columns(etls::AbstractVector) = (it=etls,)
-etls_schema(etls::TupleVector) =
-    Tables.Schema(labels(etls), eltype.([x for x in columns(etls)]))
-etls_columns(etls::TupleVector) =
-    NamedTuple{Tuple(labels(etls))}(columns(etls))
 
-function fromtable(table::Any,
-                   card::Union{Cardinality, Symbol} = x0toN)
+cell_schema(cell::AbstractVector) = Tables.schema(cell[1])
+cell_columns(cell::AbstractVector) = Tables.columns(cell[1])
+cell_schema(cell::Union{BlockVector{x0toN},BlockVector{x1toN}}) =
+    Tables.schema(elements(cell))
+cell_columns(cell::Union{BlockVector{x0toN},BlockVector{x1toN}}) =
+    Tables.columns(elements(cell))
+
+function fromtable(table, card::Union{Cardinality, Symbol}=x0toN)
     card = convert(Cardinality, card)
     cols = Tables.columns(table)
-    head = Symbol[]
-    vals = AbstractVector[]
-    for n in propertynames(cols)
-        push!(head, n)
-        c = getproperty(cols, n)
-        push!(vals, c)
+    flds = Pair{Symbol,AbstractVector}[]
+    for lbl in propertynames(cols)
+        col = getproperty(cols, lbl)
+        push!(flds, lbl => col)
     end
-    tv = TupleVector(head, length(vals[1]), vals)
-    bv = BlockVector([1, length(tv)+1], tv, card)
-    return DataKnot(shapeof(bv), bv)
+    tv = TupleVector(flds...)
+    return DataKnot(Any, tv, card)
 end
 
 #

@@ -6,31 +6,18 @@ haskey(Pkg.installed(), "NarrativeTest") || Pkg.clone("https://github.com/rbt-la
 using DataKnots
 using NarrativeTest
 
-# Make `print(Int)` produce identical output on 32-bit and 64-bit platforms.
-Base.show_datatype(io::IO, ::Type{Int}) = print(io, "Int")
-Base.show_datatype(io::IO, ::Type{UInt}) = print(io, "UInt")
+# Ignore the difference in the output of `print(Int)` between 32-bit and 64-bit platforms.
+push!(NarrativeTest.EXPECTMAP, r"Int64" => s"Int(32|64)")
 
 # Normalize printing of `Vector{Bool}`.
 Base.show(io::IO, b::Bool) = print(io, get(io, :typeinfo, Any) === Bool ? (b ? "1" : "0") : (b ? "true" : "false"))
 
-# Normalize `LoadError` output and `[0 => 0]` under 1.2.
+# Normalize `LoadError` output under 1.2.
 if VERSION >= v"1.2.0-DEV"
     function Base.showerror(io::IO, ex::LoadError, bt; backtrace=true)
         print(io, "LoadError: ")
         showerror(io, ex.error, bt, backtrace=backtrace)
         print(io, "\nin expression starting at $(ex.file):$(ex.line)")
-    end
-    function Base.show(io::IO, p::Pair)
-        iocompact = IOContext(io, :compact => get(io, :compact, true))
-        Base.isdelimited(io, p) && return Base.show_default(iocompact, p)
-        typeinfos = Base.gettypeinfos(io, p)
-        for i = (1, 2)
-            io_i = IOContext(iocompact, :typeinfo => typeinfos[i])
-            Base.isdelimited(io_i, p[i]) || print(io, "(")
-            show(io_i, p[i])
-            Base.isdelimited(io_i, p[i]) || print(io, ")")
-            i == 1 && print(io, get(io, :compact, true) ? "=>" : " => ")
-        end
     end
 end
 
@@ -40,5 +27,6 @@ if VERSION < v"1.2.0-DEV"
         print(io, Symbol(c))
 end
 
-args = !isempty(ARGS) ? ARGS : [relpath(joinpath(dirname(abspath(PROGRAM_FILE)), "../doc/src"))]
+package_path(x) = relpath(joinpath(dirname(abspath(PROGRAM_FILE)), "..", x))
+args = !isempty(ARGS) ? ARGS : package_path.(["doc/src", "README.md"])
 exit(!runtests(args))

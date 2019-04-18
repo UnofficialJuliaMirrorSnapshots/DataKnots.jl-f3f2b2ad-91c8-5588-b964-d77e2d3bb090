@@ -210,14 +210,13 @@ To label a record field we use Julia's `Pair` syntax, (`=>`).
     chicago[
         It.department >>
         Record(It.name,
-               :employee_count =>
-                   Count(It.employee))]
+               :size => Count(It.employee))]
     #=>
-      │ department             │
-      │ name    employee_count │
-    ──┼────────────────────────┼
-    1 │ POLICE               3 │
-    2 │ FIRE                 2 │
+      │ department   │
+      │ name    size │
+    ──┼──────────────┼
+    1 │ POLICE     3 │
+    2 │ FIRE       2 │
     =#
 
 This is syntax shorthand for the `Label` primitive.
@@ -225,14 +224,40 @@ This is syntax shorthand for the `Label` primitive.
     chicago[
         It.department >>
         Record(It.name,
-               Count(It.employee) >>
-               Label(:employee_count))]
+               Count(It.employee) >> Label(:size))]
     #=>
-      │ department             │
-      │ name    employee_count │
-    ──┼────────────────────────┼
-    1 │ POLICE               3 │
-    2 │ FIRE                 2 │
+      │ department   │
+      │ name    size │
+    ──┼──────────────┼
+    1 │ POLICE     3 │
+    2 │ FIRE       2 │
+    =#
+
+Rather than building a record from scratch, one could add a field
+to an existing record using `Collect`.
+
+    chicago[It.department >>
+            Collect(:size => Count(It.employee))]
+    #=>
+      │ department                                                                │
+      │ name    employee                                                     size │
+    ──┼───────────────────────────────────────────────────────────────────────────┼
+    1 │ POLICE  ANTHONY A, POLICE OFFICER, 72510; JEFFERY A, SERGEANT, 1014…    3 │
+    2 │ FIRE    DANIEL A, FIREFIGHTER-EMT, 95484; ROBERT K, FIREFIGHTER-EMT…    2 │
+    =#
+
+If a label is set to `nothing` then that field is excluded.
+This would let us restructure a record as we see fit.
+
+    chicago[It.department >>
+            Collect(:size => Count(It.employee),
+                    :employee => nothing)]
+    #=>
+      │ department   │
+      │ name    size │
+    ──┼──────────────┼
+    1 │ POLICE     3 │
+    2 │ FIRE       2 │
     =#
 
 Records can be nested. The following listing includes, for each
@@ -257,16 +282,16 @@ separate vector elements.
 
 ## Reusable Queries
 
-Queries can be reused. Let's define `EmployeeCount` to be a query
+Queries can be reused. Let's define `DeptSize` to be a query
 that computes the number of employees in a department.
 
-    EmployeeCount =
-        :employee_count =>
+    DeptSize =
+        :size =>
             Count(It.employee)
 
 This query can be used in different ways.
 
-    chicago[Max(It.department >> EmployeeCount)]
+    chicago[Max(It.department >> DeptSize)]
     #=>
     │ It │
     ┼────┼
@@ -275,14 +300,13 @@ This query can be used in different ways.
 
     chicago[
         It.department >>
-        Record(It.name,
-               EmployeeCount)]
+        Record(It.name, DeptSize)]
     #=>
-      │ department             │
-      │ name    employee_count │
-    ──┼────────────────────────┼
-    1 │ POLICE               3 │
-    2 │ FIRE                 2 │
+      │ department   │
+      │ name    size │
+    ──┼──────────────┼
+    1 │ POLICE     3 │
+    2 │ FIRE       2 │
     =#
 
 ## Filtering Data
@@ -292,13 +316,13 @@ than one employee. This can be done using the `Filter` combinator.
 
     chicago[
         It.department >>
-        Record(It.name, EmployeeCount) >>
-        Filter(It.employee_count .> 2)]
+        Record(It.name, DeptSize) >>
+        Filter(It.size .> 2)]
     #=>
-      │ department             │
-      │ name    employee_count │
-    ──┼────────────────────────┼
-    1 │ POLICE               3 │
+      │ department   │
+      │ name    size │
+    ──┼──────────────┼
+    1 │ POLICE     3 │
     =#
 
 To use regular operators in query expressions, we need to use
@@ -307,8 +331,8 @@ the period is an easy mistake to make.
 
     chicago[
         It.department >>
-        Record(It.name, EmployeeCount) >>
-        Filter(It.employee_count > 2)]
+        Record(It.name, DeptSize) >>
+        Filter(It.size > 2)]
     #=>
     ERROR: MethodError: no method matching isless(::Int64, ::DataKnots.Navigation)
     ⋮
@@ -335,31 +359,27 @@ our Chicago data starting with a list of employees.
 
 Let's extend this query to show if the salary is over 100k.
 
-    Q >>= Record(It.name,
-                 It.salary,
-                 :gt100k =>
-                     It.salary .> 100000)
+    Q >>= Collect(:gt100k => It.salary .> 100000)
 
 The query definition is tracked automatically.
 
     Q
     #=>
-    It.department.employee >>
-    Record(It.name, It.salary, :gt100k => It.salary .> 100000)
+    It.department.employee >> Collect(:gt100k => It.salary .> 100000)
     =#
 
 Let's run `Q` again.
 
     chicago[Q]
     #=>
-      │ employee                  │
-      │ name       salary  gt100k │
-    ──┼───────────────────────────┼
-    1 │ ANTHONY A   72510   false │
-    2 │ JEFFERY A  101442    true │
-    3 │ NANCY A     80016   false │
-    4 │ DANIEL A    95484   false │
-    5 │ ROBERT K   103272    true │
+      │ employee                                   │
+      │ name       position         salary  gt100k │
+    ──┼────────────────────────────────────────────┼
+    1 │ ANTHONY A  POLICE OFFICER    72510   false │
+    2 │ JEFFERY A  SERGEANT         101442    true │
+    3 │ NANCY A    POLICE OFFICER    80016   false │
+    4 │ DANIEL A   FIREFIGHTER-EMT   95484   false │
+    5 │ ROBERT K   FIREFIGHTER-EMT  103272    true │
     =#
 
 We can now filter the dataset to include only high-paid employees.
@@ -367,7 +387,7 @@ We can now filter the dataset to include only high-paid employees.
     Q >>= Filter(It.gt100k)
     #=>
     It.department.employee >>
-    Record(It.name, It.salary, :gt100k => It.salary .> 100000) >>
+    Collect(:gt100k => It.salary .> 100000) >>
     Filter(It.gt100k)
     =#
 
@@ -375,11 +395,11 @@ Let's run `Q` again.
 
     chicago[Q]
     #=>
-      │ employee                  │
-      │ name       salary  gt100k │
-    ──┼───────────────────────────┼
-    1 │ JEFFERY A  101442    true │
-    2 │ ROBERT K   103272    true │
+      │ employee                                   │
+      │ name       position         salary  gt100k │
+    ──┼────────────────────────────────────────────┼
+    1 │ JEFFERY A  SERGEANT         101442    true │
+    2 │ ROBERT K   FIREFIGHTER-EMT  103272    true │
     =#
 
 Well-tested queries may benefit from a `Tag` so that their
@@ -390,11 +410,11 @@ definitions are suppressed in larger compositions.
 
     chicago[HighlyCompensated]
     #=>
-      │ employee                  │
-      │ name       salary  gt100k │
-    ──┼───────────────────────────┼
-    1 │ JEFFERY A  101442    true │
-    2 │ ROBERT K   103272    true │
+      │ employee                                   │
+      │ name       position         salary  gt100k │
+    ──┼────────────────────────────────────────────┼
+    1 │ JEFFERY A  SERGEANT         101442    true │
+    2 │ ROBERT K   FIREFIGHTER-EMT  103272    true │
     =#
 
 This tagging can make subsequent compositions easier to read.
@@ -594,11 +614,11 @@ records to their positions, we use `Group` combinator:
 
     chicago[It.department.employee >> Group(It.position)]
     #=>
-      │ position         employee                                …
-    ──┼──────────────────────────────────────────────────────────…
-    1 │ FIREFIGHTER-EMT  DANIEL A, FIREFIGHTER-EMT, 95484; ROBERT…
-    2 │ POLICE OFFICER   ANTHONY A, POLICE OFFICER, 72510; NANCY …
-    3 │ SERGEANT         JEFFERY A, SERGEANT, 101442             …
+      │ position         employee                                                 │
+    ──┼───────────────────────────────────────────────────────────────────────────┼
+    1 │ FIREFIGHTER-EMT  DANIEL A, FIREFIGHTER-EMT, 95484; ROBERT K, FIREFIGHTER-…│
+    2 │ POLICE OFFICER   ANTHONY A, POLICE OFFICER, 72510; NANCY A, POLICE OFFICE…│
+    3 │ SERGEANT         JEFFERY A, SERGEANT, 101442                              │
     =#
 
 The query `Group(It.position)` rearranges the dataset into a new
@@ -988,13 +1008,13 @@ is an `AbstractVector` specialized for column-oriented storage.
 
     query = It.department >>
             Record(It.name,
-                   :employee_count => Count(It.employee))
+                   :size => Count(It.employee))
     vt = get(chicago[query])
     display(vt)
     #=>
-    @VectorTree of 2 × (name = (1:1) × String, employee_count = (1:1) × Int64):
-     (name = "POLICE", employee_count = 3)
-     (name = "FIRE", employee_count = 2)
+    @VectorTree of 2 × (name = (1:1) × String, size = (1:1) × Int64):
+     (name = "POLICE", size = 3)
+     (name = "FIRE", size = 2)
     =#
 
 ## Importing & Exporting Data
@@ -1005,50 +1025,58 @@ interface. Here is a tabular variant of the chicago dataset.
     using CSV
 
     employee_csv = """
-        name,department,salary,rate
-        "JEFFERY A", "POLICE", 101442,
-        "NANCY A", "POLICE", 80016,
-        "JAMES A", "FIRE", 103350,
-        "DANIEL A", "FIRE", 95484,
-        "BRENDA B", "OEMC", 64392,
-        "LAKENYA A", "OEMC", , 17.68
-        "DORIS A", "OEMC", , 19.38
+        name,department,position,salary,rate
+        "JEFFERY A", "POLICE", "SERGEANT", 101442,
+        "NANCY A", "POLICE", "POLICE OFFICER", 80016,
+        "ANTHONY A", "POLICE", "POLICE OFFICER", 72510,
+        "ALBA M", "POLICE", "POLICE CADET",, 9.46
+        "JAMES A", "FIRE", "FIRE ENGINEER-EMT", 103350,
+        "DANIEL A", "FIRE", "FIREFIGHTER-EMT", 95484,
+        "ROBERT K", "FIRE", "FIREFIGHTER-EMT", 103272,
+        "LAKENYA A", "OEMC", "CROSSING GUARD",, 17.68
+        "DORIS A", "OEMC", "CROSSING GUARD",, 19.38
+        "BRENDA B", "OEMC", "TRAFFIC CONTROL AIDE", 64392,
         """ |> IOBuffer
 
     employee_data = CSV.File(employee_csv, allowmissing=:auto)
 
-    chicago = DataKnot(:employee => employee_data)
+    chicago′ = DataKnot(:employee => employee_data)
 
-    chicago[It.employee]
+    chicago′[It.employee]
     #=>
-      │ employee                             │
-      │ name       department  salary  rate  │
-    ──┼──────────────────────────────────────┼
-    1 │ JEFFERY A  POLICE      101442        │
-    2 │ NANCY A    POLICE       80016        │
-    3 │ JAMES A    FIRE        103350        │
-    4 │ DANIEL A   FIRE         95484        │
-    5 │ BRENDA B   OEMC         64392        │
-    6 │ LAKENYA A  OEMC                17.68 │
-    7 │ DORIS A    OEMC                19.38 │
+       │ employee                                                   │
+       │ name       department  position              salary  rate  │
+    ───┼────────────────────────────────────────────────────────────┼
+     1 │ JEFFERY A  POLICE      SERGEANT              101442        │
+     2 │ NANCY A    POLICE      POLICE OFFICER         80016        │
+     3 │ ANTHONY A  POLICE      POLICE OFFICER         72510        │
+     4 │ ALBA M     POLICE      POLICE CADET                   9.46 │
+     5 │ JAMES A    FIRE        FIRE ENGINEER-EMT     103350        │
+     6 │ DANIEL A   FIRE        FIREFIGHTER-EMT        95484        │
+     7 │ ROBERT K   FIRE        FIREFIGHTER-EMT       103272        │
+     8 │ LAKENYA A  OEMC        CROSSING GUARD                17.68 │
+     9 │ DORIS A    OEMC        CROSSING GUARD                19.38 │
+    10 │ BRENDA B   OEMC        TRAFFIC CONTROL AIDE   64392        │
     =#
 
 This tabular data could be filtered to show employees that are paid
-more than average.
+more than average. Let's also prune the `rate` column.
 
     using Statistics: mean
 
-    highly_compensated = 
-         chicago[Keep(:avg_salary => mean.(It.employee.salary)) >>
+    highly_compensated =
+        chicago′[Keep(:avg_salary => mean.(It.employee.salary)) >>
                  It.employee >>
-                 Filter(It.salary .> It.avg_salary)]
+                 Filter(It.salary .> It.avg_salary) >>
+                 Collect(:rate => nothing)]
     #=>
-      │ employee                            │
-      │ name       department  salary  rate │
-    ──┼─────────────────────────────────────┼
-    1 │ JEFFERY A  POLICE      101442       │
-    2 │ JAMES A    FIRE        103350       │
-    3 │ DANIEL A   FIRE         95484       │
+      │ employee                                         │
+      │ name       department  position           salary │
+    ──┼──────────────────────────────────────────────────┼
+    1 │ JEFFERY A  POLICE      SERGEANT           101442 │
+    2 │ JAMES A    FIRE        FIRE ENGINEER-EMT  103350 │
+    3 │ DANIEL A   FIRE        FIREFIGHTER-EMT     95484 │
+    4 │ ROBERT K   FIRE        FIREFIGHTER-EMT    103272 │
     =#
 
 We can then export this data.
@@ -1057,12 +1085,81 @@ We can then export this data.
 
     highly_compensated |> DataFrame
     #=>
-    3×4 DataFrames.DataFrame
-    │ Row │ name      │ department │ salary │ rate     │
-    │     │ String    │ String     │ Int64⍰ │ Float64⍰ │
-    ├─────┼───────────┼────────────┼────────┼──────────┤
-    │ 1   │ JEFFERY A │ POLICE     │ 101442 │ missing  │
-    │ 2   │ JAMES A   │ FIRE       │ 103350 │ missing  │
-    │ 3   │ DANIEL A  │ FIRE       │ 95484  │ missing  │
+    4×4 DataFrames.DataFrame
+    │ Row │ name      │ department │ position          │ salary │
+    │     │ String    │ String     │ String            │ Int64⍰ │
+    ├─────┼───────────┼────────────┼───────────────────┼────────┤
+    │ 1   │ JEFFERY A │ POLICE     │ SERGEANT          │ 101442 │
+    │ 2   │ JAMES A   │ FIRE       │ FIRE ENGINEER-EMT │ 103350 │
+    │ 3   │ DANIEL A  │ FIRE       │ FIREFIGHTER-EMT   │ 95484  │
+    │ 4   │ ROBERT K  │ FIRE       │ FIREFIGHTER-EMT   │ 103272 │
+    =#
+
+## Restructuring Imported Data
+
+After importing tabular data, it is sometimes helpful to restructure
+hierarchically to make queries more convenient. We've seen earlier how
+this could be done with `Group` combinator.
+
+    chicago′[It.employee >> Group(It.department)]
+    #=>
+      │ department  employee                                                      │
+    ──┼───────────────────────────────────────────────────────────────────────────┼
+    1 │ FIRE        JAMES A, FIRE, FIRE ENGINEER-EMT, 103350, missing; DANIEL A, …│
+    2 │ OEMC        LAKENYA A, OEMC, CROSSING GUARD, missing, 17.68; DORIS A, OEM…│
+    3 │ POLICE      JEFFERY A, POLICE, SERGEANT, 101442, missing; NANCY A, POLICE…│
+    =#
+
+With a little bit of labeling, this hierarchy could be transformed so
+that its structure is compatible with our initial `chicago` dataset.
+
+    Restructure =
+        :department =>
+            It.employee >>
+            Group(It.department) >>
+            Record(
+               :name => It.department,
+               :employee =>
+                   It.employee >>
+                   Collect(:department => nothing))
+
+    chicago′[Restructure]
+    #=>
+      │ department                                                                │
+      │ name    employee                                                          │
+    ──┼───────────────────────────────────────────────────────────────────────────┼
+    1 │ FIRE    JAMES A, FIRE ENGINEER-EMT, 103350, missing; DANIEL A, FIREFIGHTE…│
+    2 │ OEMC    LAKENYA A, CROSSING GUARD, missing, 17.68; DORIS A, CROSSING GUAR…│
+    3 │ POLICE  JEFFERY A, SERGEANT, 101442, missing; NANCY A, POLICE OFFICER, 80…│
+    =#
+
+Using `Collect` we could save this restructure in the `department`
+field of the top-level record.
+
+    chicago″ = chicago′[Restructure >> Collect]
+    #=>
+    │ employee                              department                            │
+    ┼─────────────────────────────────────────────────────────────────────────────┼
+    │ JEFFERY A, POLICE, SERGEANT, 101442,… FIRE, [JAMES A, FIRE ENGINEER-EMT, 10…│
+    =#
+
+Then, queries that originally work with our `chicago` dataset would now
+work with `chicago″` data, as imported from a CSV file. For example, we
+could once again compute the average employee salary by department.
+
+    using Statistics: mean
+
+    chicago″[
+        It.department >>
+        Record(
+            It.name,
+            :mean_salary => mean.(It.employee.salary))]
+    #=>
+      │ department          │
+      │ name    mean_salary │
+    ──┼─────────────────────┼
+    1 │ FIRE       100702.0 │
+    2 │ OEMC        64392.0 │
+    3 │ POLICE      84656.0 │
     =#
 

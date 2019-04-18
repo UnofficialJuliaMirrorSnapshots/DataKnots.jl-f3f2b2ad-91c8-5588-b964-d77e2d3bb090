@@ -22,11 +22,11 @@ starting point for constructing other knots.
     │    │
     =#
 
-The unit knot has a single value, `nothing`. You could get the
-value of any knot using Julia's `get` function.
+The unit knot has a single value, an empty tuple. You could get
+the value of any knot using Julia's `get` function.
 
-    show(get(unitknot))
-    #-> nothing
+    get(unitknot)
+    #-> ()
 
 ## Constant Queries
 
@@ -385,9 +385,9 @@ in the output.
 Being a combinator, `Filter` builds a query component, which could
 then be composed with any data generating query.
 
-    KeepEven = Filter(iseven.(It))
+    OnlyEven = Filter(iseven.(It))
 
-    unitknot[OneTo(6) >> KeepEven]
+    unitknot[OneTo(6) >> OnlyEven]
     #=>
       │ It │
     ──┼────┼
@@ -462,8 +462,8 @@ where `It` has the values `1`, `2`, and `3`.
 
 ## Records & Labels
 
-Data objects can be created using the `Record` combinator. Values
-can be labeled using Julia's `Pair` syntax.
+Hierarchical structure can be created using the `Record`
+combinator. Values can be labeled using Julia's `Pair` syntax.
 
     GM = Record(:name => "GARRY M", :salary => 260004)
 
@@ -538,6 +538,35 @@ Calculations can be performed using on records using field labels.
     1 │  3 │
     2 │ 14 │
     3 │ 39 │
+    =#
+
+The `Collect` combinator can be used to add columns to an existing
+record. For example, the record construction above could have been
+done as follows.
+
+    Stats = Record(:n¹=>It) >>
+            Collect(:n²=> It.n¹ .* It.n¹,
+                    :n³=> It.n² .* It.n¹)
+
+    unitknot[Lift(1:3) >> Stats]
+    #=>
+      │ n¹  n²  n³ │
+    ──┼────────────┼
+    1 │  1   1   1 │
+    2 │  2   4   8 │
+    3 │  3   9  27 │
+    =#
+
+A field could be removed using `Collect` by assigning the field
+label to `nothing`.
+
+    unitknot[Lift(1:3) >> Stats >> Collect(:n¹ => nothing)]
+    #=>
+      │ n²  n³ │
+    ──┼────────┼
+    1 │  1   1 │
+    2 │  4   8 │
+    3 │  9  27 │
     =#
 
 ## Group
@@ -680,9 +709,45 @@ than once.
     3 │  6 │
     =#
 
+With `Given` the parameter provided, `AVG` does not leak into
+the surrounding context.
+
+    unitknot[GreaterThanAverage(OneTo(6)) >> It.AVG]
+    #-> ERROR: cannot find "AVG" at ⋮
+
 In DataKnots, query parameters permit external data to be used
 within query expressions. Parameters that are defined with `Given`
 can be used to remember values and reuse them.
+
+## Keeping Values
+
+The `Keep` combinator is similar to `Given` only that it does not
+increase the scope.
+
+    GT3 = Keep(:DATA => OneTo(6)) >>
+          Keep(:AVG => Mean(It.DATA)) >>
+          It.DATA >> Filter(It .> It.AVG)
+
+    unitknot[GT3]
+    #=>
+      │ DATA │
+    ──┼──────┼
+    1 │    4 │
+    2 │    5 │
+    3 │    6 │
+    =#
+
+However, unlike `Given` it does leak its parameters.
+
+    unitknot[GT3 >> Record(It, It.AVG)]
+    #=>
+      │ DATA      │
+      │ DATA  AVG │
+    ──┼───────────┼
+    1 │    4  3.5 │
+    2 │    5  3.5 │
+    3 │    6  3.5 │
+    =#
 
 ## Julia Integration
 
@@ -701,7 +766,7 @@ such as addition (`+`) have a lower precedence.
 This expectation mismatch could lead a user to write:
 
     unitknot[Lift(1:3) >> It .+ It]
-    #-> ERROR: cannot apply + to Tuple{Array{Int64,1},Nothing}⋮
+    #-> ERROR: cannot apply + to Tuple{Array{Int64,1},Tuple{}}⋮
 
 To fix this query, we add parentheses.
 

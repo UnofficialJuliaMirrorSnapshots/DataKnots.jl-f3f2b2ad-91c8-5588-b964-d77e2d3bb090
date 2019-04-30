@@ -1017,9 +1017,161 @@ is an `AbstractVector` specialized for column-oriented storage.
      (name = "FIRE", size = 2)
     =#
 
+## The `@query` Notation
+
+Queries could be written using a convenient path-like notation
+provided by the `@query` macro. In this notation:
+
+* bare identifiers are translated to navigation with `Get`;
+* query combinators, such as `Count(X)`, use lower-case names;
+* the period (`.`) is used for query composition (`>>`);
+* aggregate queries, such as `Count`, require parentheses;
+* records can be constructed using curly brackets, `{}`; and
+* functions and operators are lifted automatically.
+
+The `@query` Notation        | Equivalent Query
+-----------------------------|------------------------------------
+`department`                 | `Get(:department)`
+`count(department)`          | `Count(Get(:department))`
+`department.count()`         | `Get(:department) >> Count`
+`department.employee`        | `Get(:department) >> Get(:employee)`
+`department.count(employee)` | `Get(:department) >> Count(Get(:employee))`
+`department{name}`           | `Get(:department) >> Record(Get(:name))`
+
+A `@query` macro with one argument creates a query object.
+
+    @query department.name
+    #-> Get(:department) >> Get(:name)
+
+This query object could be used to query a `DataKnot` as usual.
+
+    chicago[@query department.name]
+    #=>
+      │ name   │
+    ──┼────────┼
+    1 │ POLICE │
+    2 │ FIRE   │
+    =#
+
+Alternatively, we can provide the input dataset as an argument
+to `@query`.
+
+    @query chicago department.name
+    #=>
+      │ name   │
+    ──┼────────┼
+    1 │ POLICE │
+    2 │ FIRE   │
+    =#
+
+Queries could also be composed by placing the query components in
+a `begin`/`end` block.
+
+    @query begin
+        department
+        count(employee)
+    end
+    #-> Get(:department) >> Count(Get(:employee))
+
+Curly brackets `{}` are used to construct `Record` queries.
+
+    @query department{name, count(employee)}
+    #-> Get(:department) >> Record(Get(:name), Count(Get(:employee)))
+
+    @query chicago department{name, count(employee)}
+    #=>
+      │ department │
+      │ name    #B │
+    ──┼────────────┼
+    1 │ POLICE   3 │
+    2 │ FIRE     2 │
+    =#
+
+Combinators, such as `Filter` and `Keep`, are available, using
+lower-case names. Operators and functions are automatically lifted
+to queries.
+
+    using Statistics: mean
+
+    @query chicago begin
+               department
+               keep(avg_salary => mean(employee.salary))
+               employee
+               filter(salary > avg_salary)
+               {name, salary}
+           end
+    #=>
+      │ employee          │
+      │ name       salary │
+    ──┼───────────────────┼
+    1 │ JEFFERY A  101442 │
+    2 │ ROBERT K   103272 │
+    =#
+
+In `@query` notation, query aggregates, such as `Count` and
+`Unique`, are lower-case and require parentheses.
+
+    @query chicago department.employee.position.unique().count()
+    #=>
+    │ It │
+    ┼────┼
+    │  3 │
+    =#
+
+Query parameters are passed as keyword arguments to `@query`.
+
+    @query chicago begin
+        department
+        employee
+        filter(salary>threshold)
+    end threshold=90544.8
+    #=>
+      │ employee                           │
+      │ name       position         salary │
+    ──┼────────────────────────────────────┼
+    1 │ JEFFERY A  SERGEANT         101442 │
+    2 │ DANIEL A   FIREFIGHTER-EMT   95484 │
+    3 │ ROBERT K   FIREFIGHTER-EMT  103272 │
+    =#
+
+To embed regular Julia variables and expressions from within a
+`@query`, use the interpolation syntax (`$`).
+
+    threshold = 90544.8
+
+    @query chicago begin
+               department.employee
+               filter(salary>$threshold)
+               {name, salary,
+                over => salary - $(trunc(Int, threshold))}
+           end
+    #=>
+      │ employee                 │
+      │ name       salary  over  │
+    ──┼──────────────────────────┼
+    1 │ JEFFERY A  101442  10898 │
+    2 │ DANIEL A    95484   4940 │
+    3 │ ROBERT K   103272  12728 │
+    =#
+
+We can use `@query` to define reusable queries and combinators.
+
+    salary = @query department.employee.salary
+
+    stats(x) = @query {min=>min($x),
+                       max=>max($x),
+                       count=>count($x)}
+
+    @query chicago stats($salary)
+    #=>
+    │ min    max     count │
+    ┼──────────────────────┼
+    │ 72510  103272      5 │
+    =#
+
 ## Importing & Exporting Data
 
-We can import data directly from systems that support the `Tables.jl`
+We can import directly from systems that support the `Tables.jl`
 interface. Here is a tabular variant of the chicago dataset.
 
     using CSV
@@ -1059,8 +1211,8 @@ interface. Here is a tabular variant of the chicago dataset.
     10 │ BRENDA B   OEMC        TRAFFIC CONTROL AIDE   64392        │
     =#
 
-This tabular data could be filtered to show employees that are paid
-more than average. Let's also prune the `rate` column.
+This tabular data could be filtered to show employees that are
+paid more than average. Let's also prune the `rate` column.
 
     using Statistics: mean
 
@@ -1097,9 +1249,9 @@ We can then export this data.
 
 ## Restructuring Imported Data
 
-After importing tabular data, it is sometimes helpful to restructure
-hierarchically to make queries more convenient. We've seen earlier how
-this could be done with `Group` combinator.
+After importing tabular data, it is sometimes helpful to
+restructure hierarchically to make queries more convenient. We've
+seen earlier how this could be done with `Group` combinator.
 
     chicago′[It.employee >> Group(It.department)]
     #=>
@@ -1110,8 +1262,8 @@ this could be done with `Group` combinator.
     3 │ POLICE      JEFFERY A, POLICE, SERGEANT, 101442, missing; NANCY A, POLICE…│
     =#
 
-With a little bit of labeling, this hierarchy could be transformed so
-that its structure is compatible with our initial `chicago` dataset.
+With a some labeling, this hierarchy could be transformed so that
+its structure is compatible with our initial `chicago` dataset.
 
     Restructure =
         :department =>
@@ -1133,8 +1285,8 @@ that its structure is compatible with our initial `chicago` dataset.
     3 │ POLICE  JEFFERY A, SERGEANT, 101442, missing; NANCY A, POLICE OFFICER, 80…│
     =#
 
-Using `Collect` we could save this restructure in the `department`
-field of the top-level record.
+Using `Collect` we could save this restructured dataset as a
+top-level field, `department`.
 
     chicago″ = chicago′[Restructure >> Collect]
     #=>
@@ -1143,9 +1295,10 @@ field of the top-level record.
     │ JEFFERY A, POLICE, SERGEANT, 101442,… FIRE, [JAMES A, FIRE ENGINEER-EMT, 10…│
     =#
 
-Then, queries that originally work with our `chicago` dataset would now
-work with `chicago″` data, as imported from a CSV file. For example, we
-could once again compute the average employee salary by department.
+Then, queries that originally worked with our hierarchical
+`chicago` dataset would now work with this imported and then
+restructured `chicago″` data. For example, we could once again
+compute the average employee salary by department.
 
     using Statistics: mean
 

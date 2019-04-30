@@ -612,6 +612,25 @@ end
 end
 
 """
+    cardinality(card::Cardinality) :: Pipeline
+
+This pipeline asserts the cardinality of the input block vector.
+"""
+cardinality(card::Cardinality) = Pipeline(cardinality, card)
+
+function cardinality(rt::Runtime, input::AbstractVector, card)
+    @assert input isa BlockVector
+    if cardinality(input) == card
+        return input
+    elseif fits(cardinality(input), card)
+        @inbounds output = BlockVector(offsets(input), elements(input), card)
+        return output
+    else
+        return BlockVector(offsets(input), elements(input), card)
+    end
+end
+
+"""
     block_length() :: Pipeline
 
 This pipeline converts a block vector to a vector of block lengths.
@@ -1070,6 +1089,11 @@ function simplify_block(ps)
                 k += 1
             elseif k <= length(ps)-1 && ps[k].op == with_elements && ps[k].args[1].op == wrap && ps[k+1].op == flatten
                 simplified = true
+                k += 2
+            elseif k <= length(ps)-1 && ps[k].op == with_elements && ps[k].args[1].op == chain_of &&
+                   length(ps[k].args[1].args[1]) == 2 && ps[k].args[1].args[1][2].op == wrap && ps[k+1].op == flatten
+                simplified = true
+                push!(ps′, with_elements(ps[k].args[1].args[1][1]))
                 k += 2
             elseif k <= length(ps)-2 && ps[k].op == wrap && ps[k+1].op == with_elements && ps[k+2].op == flatten
                 simplified = true

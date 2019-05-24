@@ -15,12 +15,14 @@ transformations.  We will use the following definitions:
         block_filler,
         block_length,
         block_lift,
+        block_not_empty,
         chain_of,
         column,
         distribute,
         distribute_all,
         filler,
         flatten,
+        get_by,
         group_by,
         lift,
         null_filler,
@@ -501,6 +503,15 @@ The pipeline `block_length()` calculates the lengths of blocks in a block vector
     p(@VectorTree [String] [missing, "GARRY M", ["ANTHONY R", "DANA A"]])
     #-> [0, 1, 2]
 
+The pipeline `block_not_empty()` produces a vector of Boolean values indicating
+whether the input block is empty or not.
+
+    p = block_not_empty()
+    #-> block_not_empty()
+
+    p(@VectorTree [String] [missing, "GARRY M", ["ANTHONY R", "DANA A"]])
+    #-> Bool[0, 1, 1]
+
 The pipeline `block_any()` checks whether the blocks in a `Bool` block vector
 have any `true` values.
 
@@ -563,6 +574,50 @@ The pipeline `sieve_by()` filters a vector of pairs by the second column.
 
     p(@VectorTree (Int, Bool) [260004 true; 185364 false; 170112 false])
     #-> @VectorTree (0:1) × Int64 [260004, missing, missing]
+
+
+### Indexing
+
+The pipeline `get_by(N)` transforms a block vector by extracting the `N`-th
+element of each block.
+
+    p = get_by(2)
+    #-> get_by(2)
+
+    p(@VectorTree [String] [["GARRY M", "ANTHONY R", "DANA A"], ["JOSE S", "CHARLES S"], missing])
+    #-> @VectorTree (0:1) × String ["ANTHONY R", "CHARLES S", missing]
+
+The pipeline `get_by(-N)` takes the `N`-th element from the end.
+
+    p = get_by(-1)
+
+    p(@VectorTree [String] [["GARRY M", "ANTHONY R", "DANA A"], ["JOSE S", "CHARLES S"], missing])
+    #-> @VectorTree (0:1) × String ["DANA A", "CHARLES S", missing]
+
+It is possible to explicitly specify the cardinality of the output.
+
+    p = get_by(1, x1to1)
+    #-> get_by(1, x1to1)
+
+    p(@VectorTree [String] [["GARRY M", "ANTHONY R", "DANA A"], ["JOSE S", "CHARLES S"]])
+    #-> @VectorTree (1:1) × String ["GARRY M", "JOSE S"]
+
+    p = get_by(-1, x1to1)
+
+    p(@VectorTree [String] [["GARRY M", "ANTHONY R", "DANA A"], ["JOSE S", "CHARLES S"]])
+    #-> @VectorTree (1:1) × String ["DANA A", "CHARLES S"]
+
+A variant of this pipeline `get_by()` expects a tuple vector with two columns:
+the first column containing the blocks and the second column with the indexes.
+
+    p = get_by()
+    #-> get_by()
+
+    p(@VectorTree ([String], Int) [(["GARRY M", "ANTHONY R", "DANA A"], 1), (["JOSE S", "CHARLES S"], -1), (missing, 0)])
+    #-> @VectorTree (0:1) × String ["GARRY M", "CHARLES S", missing]
+
+    p(@VectorTree ([String], Int) [(["GARRY M", "ANTHONY R", "DANA A"], 1), (["JOSE S", "CHARLES S"], -1)])
+    #-> @VectorTree (0:1) × String ["GARRY M", "CHARLES S"]
 
 
 ### Slicing

@@ -1,5 +1,14 @@
 # Release Notes
 
+## v0.8.0
+
+- Added `Exists` combinator.
+- Added `First`, `Last` and `Nth` combinators.
+- Added `show(knot, as=:shape)` display.
+- Removed `It` from header for unlabled output.
+- Selection header now includes packed labels.
+- Show `(empty)` for knots with no elements.
+
 ## v0.7.0
 
 - Added `Mix` combinator.

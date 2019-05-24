@@ -12,7 +12,9 @@ We will need the following definitions.
         Drop,
         Each,
         Environment,
+        Exists,
         Filter,
+        First,
         Get,
         Given,
         Group,
@@ -23,10 +25,12 @@ We will need the following definitions.
         It,
         Keep,
         Label,
+        Last,
         Lift,
         Max,
         Min,
         Mix,
+        Nth,
         Record,
         Sum,
         Tag,
@@ -72,7 +76,7 @@ holds associated employee records.
 
     chicago = DataKnot(Any, chicago_data, :x1to1)
     #=>
-    │ department                                                                  │
+    │ department{name,employee{name,position,salary,rate}}                        │
     ┼─────────────────────────────────────────────────────────────────────────────┼
     │ POLICE, [JEFFERY A, SERGEANT, 101442, missing; NANCY A, POLICE OFFICER, 800…│
     =#
@@ -151,7 +155,6 @@ composition combinator.
 
     chicago[Employees >> SalaryOver100K]
     #=>
-      │ It    │
     ──┼───────┼
     1 │  true │
     2 │ false │
@@ -206,9 +209,8 @@ the number of items produced by a query, we can use the `Count` combinator.
 
     chicago[Count(EmployeesWithSalaryOver100K)]
     #=>
-    │ It │
-    ┼────┼
-    │  3 │
+    ┼───┼
+    │ 3 │
     =#
 
 In general, query algebra forms an XPath-like domain-specific language.  It is
@@ -354,9 +356,8 @@ A `Query` is applied to a `DataKnot` using the array indexing syntax.
 
     chicago[Q]
     #=>
-    │ It │
-    ┼────┼
-    │  3 │
+    ┼───┼
+    │ 3 │
     =#
 
 Any parameters to the query should be be passed as keyword arguments.
@@ -367,9 +368,8 @@ Any parameters to the query should be be passed as keyword arguments.
 
     chicago[Q, AMT=100000, SZ=1]
     #=>
-    │ It │
-    ┼────┼
-    │  2 │
+    ┼───┼
+    │ 2 │
     =#
 
 We can use the function `assemble()` to see the query plan.
@@ -382,9 +382,8 @@ We can use the function `assemble()` to see the query plan.
 
     p(chicago)
     #=>
-    │ It │
-    ┼────┼
-    │  3 │
+    ┼───┼
+    │ 3 │
     =#
 
 ### `@query`
@@ -401,9 +400,8 @@ a `DataKnot`.
 
     @query chicago count(department)
     #=>
-    │ It │
-    ┼────┼
-    │  3 │
+    ┼───┼
+    │ 3 │
     =#
 
 Query parameters could be passed as keyword arguments.
@@ -414,9 +412,8 @@ Query parameters could be passed as keyword arguments.
         count()
     end
     #=>
-    │ It │
-    ┼────┼
-    │  2 │
+    ┼───┼
+    │ 2 │
     =#
 
 Queries defined elsewhere could be embedded in a `@query` expression using
@@ -437,7 +434,6 @@ Queries can be composed sequentially using the `>>` combinator.
 
     chicago[Q]
     #=>
-    │ It │
     ┼────┼
     │ 42 │
     =#
@@ -449,7 +445,6 @@ The `It` query primitive is the identity with respect to `>>`.
 
     chicago[Q]
     #=>
-    │ It │
     ┼────┼
     │ 42 │
     =#
@@ -558,7 +553,7 @@ The query `Collect(X)` adds a new field to the input record.
     chicago[Q]
     #=>
       │ department                                                                │
-      │ name    employee                                                     size │
+      │ name    employee{name,position,salary,rate}                          size │
     ──┼───────────────────────────────────────────────────────────────────────────┼
     1 │ POLICE  JEFFERY A, SERGEANT, 101442, missing; NANCY A, POLICE OFFIC…    4 │
     2 │ FIRE    JAMES A, FIRE ENGINEER-EMT, 103350, missing; DANIEL A, FIRE…    3 │
@@ -574,7 +569,7 @@ More than one field could be added at the same time.
     chicago[Q]
     #=>
       │ department                                                                │
-      │ name    employee                                         size  avg_salary │
+      │ name    employee{name,position,salary,rate}              size  avg_salary │
     ──┼───────────────────────────────────────────────────────────────────────────┼
     1 │ POLICE  JEFFERY A, SERGEANT, 101442, missing; NANCY A, …    4     63492.0 │
     2 │ FIRE    JAMES A, FIRE ENGINEER-EMT, 103350, missing; DA…    3    100702.0 │
@@ -588,7 +583,7 @@ If the new field has no label, an ordinal label will be assigned to it.
     chicago[Q]
     #=>
       │ department                                                                │
-      │ name    employee                                                       #C │
+      │ name    employee{name,position,salary,rate}                            #C │
     ──┼───────────────────────────────────────────────────────────────────────────┼
     1 │ POLICE  JEFFERY A, SERGEANT, 101442, missing; NANCY A, POLICE OFFICER…  4 │
     2 │ FIRE    JAMES A, FIRE ENGINEER-EMT, 103350, missing; DANIEL A, FIREFI…  3 │
@@ -631,7 +626,7 @@ To remove a field from a record, replace it with the value `nothing`.
 
     chicago[Q]
     #=>
-    │ department                            employee                              │
+    │ department{name,employee{name,positi… employee{name,position,salary,rate}   │
     ┼─────────────────────────────────────────────────────────────────────────────┼
     │ POLICE, [JEFFERY A, SERGEANT, 101442… JEFFERY A, SERGEANT, 101442, missing;…│
     =#
@@ -660,7 +655,7 @@ generated by `X₁`, `X₂` … `Xₙ`.
     chicago[Q]
     #=>
        │ department                                             │
-       │ name    employee                                       │
+       │ name    employee{name,position,salary,rate}            │
     ───┼────────────────────────────────────────────────────────┼
      1 │ POLICE  JEFFERY A, SERGEANT, 101442, missing           │
      2 │ POLICE  NANCY A, POLICE OFFICER, 80016, missing        │
@@ -726,7 +721,6 @@ queries.
 
     chicago[Q]
     #=>
-    │ It           │
     ┼──────────────┼
     │ Hello World! │
     =#
@@ -738,8 +732,7 @@ Lifting `missing` produces no output.
 
     chicago[Q]
     #=>
-    │ It │
-    ┼────┼
+    (empty)
     =#
 
 Lifting a vector produces plural output.
@@ -749,11 +742,10 @@ Lifting a vector produces plural output.
 
     chicago[Q]
     #=>
-      │ It │
-    ──┼────┼
-    1 │ a  │
-    2 │ b  │
-    3 │ c  │
+    ──┼───┼
+    1 │ a │
+    2 │ b │
+    3 │ c │
     =#
 
 When lifting a vector, we can specify the cardinality constraint.
@@ -763,11 +755,10 @@ When lifting a vector, we can specify the cardinality constraint.
 
     chicago[Q]
     #=>
-      │ It │
-    ──┼────┼
-    1 │ a  │
-    2 │ b  │
-    3 │ c  │
+    ──┼───┼
+    1 │ a │
+    2 │ b │
+    3 │ c │
     =#
 
 `Lift` can also convert Julia functions to query combinators.
@@ -779,9 +770,8 @@ When lifting a vector, we can specify the cardinality constraint.
 
     chicago[Q]
     #=>
-    │ It │
-    ┼────┼
-    │  1 │
+    ┼───┼
+    │ 1 │
     =#
 
 Functions of multiple arguments are also supported.
@@ -823,7 +813,6 @@ Just as functions with no arguments.
 
     chicago[Q]
     #=>
-    │ It       │
     ┼──────────┼
     │ 0.823648 │
     =#
@@ -839,7 +828,6 @@ Functions with vector arguments are supported.
 
     chicago[Q]
     #=>
-    │ It      │
     ┼─────────┼
     │ 88638.0 │
     =#
@@ -852,8 +840,7 @@ no and plural output.
 
     chicago[Q]
     #=>
-    │ It │
-    ┼────┼
+    (empty)
     =#
 
     OneTo(N) = Lift(UnitRange, (1, N))
@@ -863,11 +850,10 @@ no and plural output.
 
     chicago[Q]
     #=>
-      │ It │
-    ──┼────┼
-    1 │  1 │
-    2 │  2 │
-    3 │  3 │
+    ──┼───┼
+    1 │ 1 │
+    2 │ 2 │
+    3 │ 3 │
     =#
 
 Julia functions are lifted when they are broadcasted over queries.
@@ -877,7 +863,6 @@ Julia functions are lifted when they are broadcasted over queries.
 
     chicago[Q]
     #=>
-    │ It      │
     ┼─────────┼
     │ 88638.0 │
     =#
@@ -930,7 +915,6 @@ Query value functions could also be defined via `Lift`.
 
     chicago[Q]
     #=>
-    │ It │
     ┼────┼
     │ 10 │
     =#
@@ -940,11 +924,10 @@ Query value functions could also be defined via `Lift`.
 
     chicago[Q]
     #=>
-      │ It │
-    ──┼────┼
-    1 │  4 │
-    2 │  3 │
-    3 │  3 │
+    ──┼───┼
+    1 │ 4 │
+    2 │ 3 │
+    3 │ 3 │
     =#
 
 Note that `Record` and `Lift` also serve as natural barriers for aggregate
@@ -970,11 +953,10 @@ queries.
 
     chicago[Q]
     #=>
-      │ It │
-    ──┼────┼
-    1 │  4 │
-    2 │  3 │
-    3 │  3 │
+    ──┼───┼
+    1 │ 4 │
+    2 │ 3 │
+    3 │ 3 │
     =#
 
 In `@query` notation, `Each(X)` is written as `each(X)`.
@@ -1104,11 +1086,10 @@ preserved.
 
     chicago[Q]
     #=>
-      │ It │
-    ──┼────┼
-    1 │  4 │
-    2 │  3 │
-    3 │  3 │
+    ──┼───┼
+    1 │ 4 │
+    2 │ 3 │
+    3 │ 3 │
     =#
 
 Same notation is used to extract values of context parameters defined with
@@ -1196,7 +1177,6 @@ Regular and named tuples also support attribute lookup.
 
     chicago[Q]
     #=>
-    │ It       │
     ┼──────────┼
     │ SERGEANT │
     =#
@@ -1362,7 +1342,7 @@ In `@query` notation, `Keep(X)` and `Given(X, Q)` are written as `keep(X)` and
                               Get(:employee) >> Take(Get(:half)))
     =#
 
-### `Count`, `Sum`, `Max`, `Min`
+### `Count`, `Exists`, `Sum`, `Max`, `Min`
 
 `Count(X)`, `Sum(X)`, `Max(X)`, `Min(X)` evaluate the `X` and emit the number
 of elements, their sum, maximum, and minimum respectively.
@@ -1434,6 +1414,40 @@ output.
     3 │ OEMC    17.68; 19.38      2  37.06  19.38  17.68 │
     =#
 
+`Exists(X)` evaluates `X` and emits a Boolean value that indicates whether `X`
+produces at least one value or not.
+
+    Q = It.department.employee >>
+        Record(It.name,
+               It.salary,
+               :has_salary => Exists(It.salary),
+               It.rate,
+               :has_rate => It.rate >> Exists)
+    #=>
+    It.department.employee >> Record(It.name,
+                                     It.salary,
+                                     :has_salary => Exists(It.salary),
+                                     It.rate,
+                                     :has_rate => It.rate >> Exists)
+    =#
+
+    chicago[Q]
+    #=>
+       │ employee                                       │
+       │ name       salary  has_salary  rate   has_rate │
+    ───┼────────────────────────────────────────────────┼
+     1 │ JEFFERY A  101442        true            false │
+     2 │ NANCY A     80016        true            false │
+     3 │ ANTHONY A   72510        true            false │
+     4 │ ALBA M                  false   9.46      true │
+     5 │ JAMES A    103350        true            false │
+     6 │ DANIEL A    95484        true            false │
+     7 │ ROBERT K   103272        true            false │
+     8 │ LAKENYA A               false  17.68      true │
+     9 │ DORIS A                 false  19.38      true │
+    10 │ BRENDA B    64392        true            false │
+    =#
+
 These operations are also available in the `@query` notation.
 
     @query begin
@@ -1465,6 +1479,13 @@ These operations are also available in the `@query` notation.
            Get(:rate) >> Then(Sum),
            Get(:rate) >> Then(Max),
            Get(:rate) >> Then(Min))
+    =#
+
+    @query department.employee{name, exists(salary), rate.exists()}
+    #=>
+    Get(:department) >>
+    Get(:employee) >>
+    Record(Get(:name), Exists(Get(:salary)), Get(:rate) >> Then(Exists))
     =#
 
 ### `Filter`
@@ -1528,6 +1549,119 @@ In `@query` notation, we write `filter(X)`.
     Get(:employee) >>
     Filter(Lift(==, (Get(:name), Lift("JEFFERY A"))))
     =#
+
+### `First`, `Last`, `Nth`
+
+We can use `First(X)`, `Last(X)` and `Nth(X, N)` to extract the first, the
+last, or the `N`-th element of the output of `X`.
+
+    chicago[It.department.name]
+    #=>
+      │ name   │
+    ──┼────────┼
+    1 │ POLICE │
+    2 │ FIRE   │
+    3 │ OEMC   │
+    =#
+
+    Q = First(It.department.name)
+    #-> First(It.department.name)
+
+    chicago[Q]
+    #=>
+    │ name   │
+    ┼────────┼
+    │ POLICE │
+    =#
+
+    Q = Last(It.department.name)
+    #-> Last(It.department.name)
+
+    chicago[Q]
+    #=>
+    │ name │
+    ┼──────┼
+    │ OEMC │
+    =#
+
+    Q = Nth(It.department.name, 2)
+    #-> Nth(It.department.name, 2)
+
+    chicago[Q]
+    #=>
+    │ name │
+    ┼──────┼
+    │ FIRE │
+    =#
+
+These operations also have an aggregate form.
+
+    Q = It.department.name >> First
+    #-> It.department.name >> First
+
+    chicago[Q]
+    #=>
+    │ name   │
+    ┼────────┼
+    │ POLICE │
+    =#
+
+    Q = It.department.name >> Last
+    #-> It.department.name >> Last
+
+    chicago[Q]
+    #=>
+    │ name │
+    ┼──────┼
+    │ OEMC │
+    =#
+
+    Q = It.department.name >> Nth(2)
+    #-> It.department.name >> Nth(2)
+
+    chicago[Q]
+    #=>
+    │ name │
+    ┼──────┼
+    │ FIRE │
+    =#
+
+`Nth` can take a query argument, which is evaluated against the input source
+and must produce a singular mandatory integer value.
+
+    chicago[Nth(It.department.name, Count(It.department) .- 1)]
+    #=>
+    │ name │
+    ┼──────┼
+    │ FIRE │
+    =#
+
+    chicago[It.department.name >> Nth(Count(It.department) .- 1)]
+    #=>
+    │ name │
+    ┼──────┼
+    │ FIRE │
+    =#
+
+In `@query` notation, we write `first()`, `last()` and `nth(N)`.
+
+    @query first(department)
+    #-> First(Get(:department))
+
+    @query last(department)
+    #-> Last(Get(:department))
+
+    @query nth(department, 2)
+    #-> Nth(Get(:department), Lift(2))
+
+    @query department.first()
+    #-> Get(:department) >> Then(First)
+
+    @query department.last()
+    #-> Get(:department) >> Then(Last)
+
+    @query department.nth(2)
+    #-> Get(:department) >> Nth(Lift(2))
 
 ### `Take` and `Drop`
 
@@ -1628,7 +1762,7 @@ The `Is1to1` query asserts that the input exists and is singular.
     chicago[Q]
     #=>
     │ department                                                                  │
-    │ name    employee                                                            │
+    │ name    employee{name,position,salary,rate}                                 │
     ┼─────────────────────────────────────────────────────────────────────────────┼
     │ POLICE  JEFFERY A, SERGEANT, 101442, missing; NANCY A, POLICE OFFICER, 8001…│
     =#
@@ -1686,9 +1820,8 @@ These operations could also be used to widen the cardinality constraint.
 
     chicago[Q]
     #=>
-      │ It │
-    ──┼────┼
-    1 │  3 │
+    ──┼───┼
+    1 │ 3 │
     =#
 
     shape(chicago[Q])
@@ -1788,7 +1921,7 @@ We use the `Group` combinator to group the input by the given key.
 
     chicago[Q]
     #=>
-      │ position              employee                                            │
+      │ position              employee{name,position,salary,rate}                 │
     ──┼───────────────────────────────────────────────────────────────────────────┼
     1 │ CROSSING GUARD        LAKENYA A, CROSSING GUARD, missing, 17.68; DORIS A,…│
     2 │ FIRE ENGINEER-EMT     JAMES A, FIRE ENGINEER-EMT, 103350, missing         │

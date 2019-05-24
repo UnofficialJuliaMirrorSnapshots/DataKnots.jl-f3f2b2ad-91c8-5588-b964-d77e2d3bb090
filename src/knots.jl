@@ -47,19 +47,17 @@ An empty knot can be constructed with `missing`.
 
 ```jldoctest
 julia> convert(DataKnot, missing)
-│ It │
-┼────┼
+(empty)
 ```
 
 A plural knot is constructed from a vector.
 
 ```jldoctest
 julia> convert(DataKnot, 'a':'c')
-  │ It │
-──┼────┼
-1 │ a  │
-2 │ b  │
-3 │ c  │
+──┼───┼
+1 │ a │
+2 │ b │
+3 │ c │
 ```
 
 An object that complies with the `Table` interface, such as
@@ -96,20 +94,18 @@ We can query a knot using array indexing notation.
 
 ```jldoctest
 julia> convert(DataKnot, (dataset='a':'c',))[Count(It.dataset)]
-│ It │
-┼────┼
-│  3 │
+┼───┼
+│ 3 │
 ```
 
 Query parameters are provided as keyword arguments.
 
 ```jldoctest
 julia> convert(DataKnot, 1:3)[PWR=2, It .^ It.PWR]
-  │ It │
-──┼────┼
-1 │  1 │
-2 │  4 │
-3 │  9 │
+──┼───┼
+1 │ 1 │
+2 │ 4 │
+3 │ 9 │
 ```
 """
 struct DataKnot
@@ -174,9 +170,8 @@ The unit knot holds an empty tuple.
 
 ```jldoctest
 julia> unitknot
-│ It │
-┼────┼
-│    │
+┼──┼
+│  │
 ```
 
 The `unitknot` is useful for constructing queries that
@@ -184,7 +179,6 @@ do not originate from another datasource.
 
 ```jldoctest
 julia> unitknot["Hello"]
-│ It    │
 ┼───────┼
 │ Hello │
 ```
@@ -204,12 +198,18 @@ quoteof(db::DataKnot) =
 # Tables.jl interface.
 #
 
-Tables.istable(knot::DataKnot) = Tables.istable(eltype(knot.cell))
-Tables.columnaccess(knot::DataKnot) = Tables.istable(knot)
+Tables.istable(db::DataKnot) =
+    Tables.istable(eltype(db.cell))
 
-Tables.columns(knot::DataKnot) = cell_columns(knot.cell)
+Tables.columnaccess(db::DataKnot) =
+    Tables.istable(db)
 
-cell_columns(cell::AbstractVector) = Tables.columns(cell[1])
+Tables.columns(db::DataKnot) =
+    cell_columns(db.cell)
+
+cell_columns(cell::AbstractVector) =
+    Tables.columns(cell[1])
+
 cell_columns(cell::Union{BlockVector{x0toN},BlockVector{x1toN}}) =
     Tables.columns(elements(cell))
 
@@ -229,16 +229,73 @@ end
 # Rendering.
 #
 
-function show(io::IO, db::DataKnot)
+summary(io::IO, db::DataKnot) =
+    print(io, "$(cell_length(db.cell))-element DataKnot")
+
+cell_length(cell::AbstractVector) =
+    eltype(cell) <: AbstractVector ? length(cell[1]) : 1
+
+cell_length(cell::BlockVector) =
+    length(elements(cell))
+
+"""
+    show(::DataKnot[; as=:table])
+
+This displays a `DataKnot` as a table, truncating the data
+to fit the current display.
+
+```jldoctest
+julia> using DataKnots
+
+julia> show(unitknot[Lift(1:3) >> Record(:x => It, :y => It .* It)])
+  │ x  y │
+──┼──────┼
+1 │ 1  1 │
+2 │ 2  4 │
+3 │ 3  9 │
+```
+
+    show(::DataKnot; as=:shape)
+
+This visualizes the shape of a `DataKnot` in a form of a tree.
+
+```jldoctest
+julia> using DataKnots
+
+julia> show(as=:shape, unitknot[Lift(1:3) >> Record(:x => It, :y => It .* It)])
+3-element DataKnot:
+  #    0:N
+  ├╴x  1:1 × Int64
+  └╴y  1:1 × Int64
+```
+"""
+show(db::DataKnot; kws...) =
+    show(stdout, db; kws...)
+
+function show(io::IO, db::DataKnot; as::Symbol=:table)
+    if as == :shape
+        print_shape(io, db)
+    else
+        print_table(io, db)
+    end
+end
+
+function print_shape(io::IO, db::DataKnot)
+    summary(io, db)
+    println(":")
+    print_graph(io, shape(db); indent=2)
+end
+
+function print_table(io::IO, db::DataKnot)
     maxy, maxx = displaysize(io)
-    lines = render_dataknot(maxx, maxy, db)
+    lines = render_table(maxx, maxy, db)
     for line in lines
         println(io, line)
     end
 end
 
-function render_dataknot(maxx::Int, maxy::Int, db::DataKnot)
-    d = tear_data(table_data(db), maxy)
+function render_table(maxx::Int, maxy::Int, db::DataKnot)
+    d = table_data(db, maxy)
     l = table_layout(d, maxx)
     c = table_draw(l, maxx)
     return lines!(c)
@@ -264,7 +321,7 @@ TableData(d::TableData; head=nothing, body=nothing, shp=nothing, idxs=nothing, t
               idxs !== nothing ? idxs : d.idxs,
               tear !== nothing ? tear : d.tear)
 
-function table_data(db::DataKnot)
+function table_data(db::DataKnot, maxy::Int)
     shp = shape(db)
     title = String(getlabel(shp, ""))
     shp = relabel(shp, nothing)
@@ -272,7 +329,7 @@ function table_data(db::DataKnot)
     body = TupleVector(1, AbstractVector[cell(db)])
     shp = TupleOf(shp)
     d = TableData(head, body, shp)
-    return default_data_header(focus_data(d, 1))
+    return tear_data(nested_headers(focus_data(d, 1)), maxy)
 end
 
 focus_data(d::TableData, pos) =
@@ -300,6 +357,9 @@ end
 
 as_blocks(::AbstractShape) =
     nothing
+
+as_blocks(shp::Annotation) =
+    as_blocks(subject(shp))
 
 as_blocks(src::BlockOf) =
     pass() |> designate(src, src)
@@ -357,6 +417,9 @@ end
 as_tuples(::AbstractShape) =
     nothing
 
+as_tuples(shp::Annotation) =
+    as_tuples(subject(shp))
+
 as_tuples(src::TupleOf) =
     pass() |> designate(src, src)
 
@@ -375,12 +438,37 @@ as_tuples(ity::Type{<:Tuple}) =
     adapt_tuple() |> designate(ity,
                                TupleOf(collect(AbstractShape, ity.parameters)))
 
-function default_data_header(d::TableData)
+function nested_headers(d::TableData)
     hh, hw = size(d.head)
-    hh == 0 && hw > 0 || return d
-    head′ = fill(("", 0), (1, hw))
-    head′[1, 1] = ("It", hw)
+    hh > 0 || return d
+    head′ = copy(d.head)
+    for col = 1:hw
+        row = hh
+        d.head[row, col][2] == 1 || continue
+        while d.head[row, col] == ("", 1) && row > 1 && d.head[row-1, col] == ("", 1)
+            row -= 1
+        end
+        sel = nested_selector(column(d.shp, col))
+        sel != "" || continue
+        head′[row, col] = (d.head[row, col][1] * sel, 1)
+    end
     TableData(d, head=head′)
+end
+
+function nested_selector(shp::AbstractShape)
+    p = as_blocks(shp)
+    if p !== nothing
+        shp = elements(target(p))
+    end
+    p = as_tuples(shp)
+    p !== nothing || return ""
+    shp = target(p)
+    sels = String[]
+    for k = 1:width(shp)
+        text = String(label(shp, k))
+        push!(sels, text * nested_selector(column(shp, k)))
+    end
+    "{" * join(sels, ",") * "}"
 end
 
 function tear_data(d::TableData, maxy::Int)
@@ -411,9 +499,10 @@ struct TableLayout
     idxs_cols::Int
     head_rows::Int
     tear_row::Int
+    empty::Bool
 
-    TableLayout(w, h, idxs_cols, head_rows, tear_row) =
-        new(fill(TableCell(), (h, w)), fill((0, 0), w), idxs_cols, head_rows, tear_row)
+    TableLayout(w, h, idxs_cols, head_rows, tear_row, empty) =
+        new(fill(TableCell(), (h, w)), fill((0, 0), w), idxs_cols, head_rows, tear_row, empty)
 end
 
 function table_layout(d::TableData, maxx::Int)
@@ -422,7 +511,7 @@ function table_layout(d::TableData, maxx::Int)
     idxs_cols = 0 + (!isempty(d.idxs))
     head_rows = size(d.head, 1)
     tear_row = d.tear > 0 ? head_rows + d.tear : 0
-    l = TableLayout(w, h, idxs_cols, head_rows, tear_row)
+    l = TableLayout(w, h, idxs_cols, head_rows, tear_row, isempty(d.body))
     populate_body!(d, l, maxx)
     populate_head!(d, l)
     squeeze!(l, maxx)
@@ -684,22 +773,31 @@ lines!(c::TableCanvas) =
     String.(take!.(c.bufs))
 
 function table_draw(l::TableLayout, maxx::Int)
-    maxy = size(l.cells, 1) + (l.tear_row > 0) + 1
+    maxy = size(l.cells, 1) > 0 ? size(l.cells, 1) + (l.tear_row > 0) + l.empty + 1 : 1
     c = TableCanvas(maxx, maxy)
-    extent = 0
-    for col = 1:size(l.cells, 2)
-        if col == l.idxs_cols + 1
-            extent = draw_bar!(c, extent, l)
+    if size(l.cells, 1) > 0
+        extent = 0
+        for col = 1:size(l.cells, 2)
+            if col == l.idxs_cols + 1
+                extent = draw_bar!(c, extent, l)
+            end
+            extent = draw_column!(c, extent, l, col)
         end
-        extent = draw_column!(c, extent, l, col)
+        draw_bar!(c, extent, l)
     end
-    draw_bar!(c, extent, l)
+    if l.empty
+        write!(c, 1, maxy, "(empty)")
+    end
     c
 end
 
 function draw_bar!(c::TableCanvas, extent::Int, l::TableLayout)
     x = extent + 1
     y = 1
+    if l.head_rows == 0
+        write!(c, x, y, "┼")
+        y += 1
+    end
     for row = 1:size(l.cells, 1)
         write!(c, x, y, "│")
         y += 1
@@ -721,6 +819,10 @@ function draw_column!(c::TableCanvas, extent::Int, l::TableLayout, col::Int)
         sz -= 1
     end
     y = 1
+    if l.head_rows == 0
+        write!(c, extent + 1, y, "─" ^ (sz + 2))
+        y += 1
+    end
     for row = 1:size(l.cells, 1)
         x = extent + 2
         cell = l.cells[row, col]

@@ -76,20 +76,18 @@ In a query expression, use `It` to refer to the query's input.
 
 ```jldoctest
 julia> unitknot[Lift(3) >> (It .+ 1)]
-│ It │
-┼────┼
-│  4 │
+┼───┼
+│ 4 │
 ```
 
 `It` is the identity with respect to query composition.
 
 ```jldoctest
 julia> unitknot[Lift('a':'c') >> It]
-  │ It │
-──┼────┼
-1 │ a  │
-2 │ b  │
-3 │ c  │
+──┼───┼
+1 │ a │
+2 │ b │
+3 │ c │
 ```
 
 `It` provides a shorthand notation for data navigation using
@@ -185,9 +183,8 @@ Applies the query to a dataset with a given set of parameters.
 
 ```jldoctest
 julia> @query unitknot 2x+1 x=1
-│ It │
-┼────┼
-│  3 │
+┼───┼
+│ 3 │
 ```
 """
 macro query(db, exs...)
@@ -881,7 +878,6 @@ This converts any value to a constant query.
 
 ```jldoctest
 julia> unitknot[Lift("Hello")]
-│ It    │
 ┼───────┼
 │ Hello │
 ```
@@ -890,11 +886,10 @@ julia> unitknot[Lift("Hello")]
 
 ```jldoctest
 julia> unitknot[Lift('a':'c')]
-  │ It │
-──┼────┼
-1 │ a  │
-2 │ b  │
-3 │ c  │
+──┼───┼
+1 │ a │
+2 │ b │
+3 │ c │
 ```
 
 To specify the vector cardinality, add `:x0to1`, `:x0toN`,
@@ -902,19 +897,17 @@ To specify the vector cardinality, add `:x0to1`, `:x0toN`,
 
 ```jldoctest
 julia> unitknot[Lift('a':'c', :x1toN)]
-  │ It │
-──┼────┼
-1 │ a  │
-2 │ b  │
-3 │ c  │
+──┼───┼
+1 │ a │
+2 │ b │
+3 │ c │
 ```
 
 The `missing` value makes an query with no output.
 
 ```jldoctest
 julia> unitknot[Lift(missing)]
-│ It │
-┼────┼
+(empty)
 ```
 """
 Lift(val) =
@@ -930,9 +923,8 @@ Lift(elts::AbstractVector, card::Union{Cardinality,Symbol}) =
 
 ```jldoctest
 julia> unitknot[Lift((x=1, y=2)) >> Lift(+, (It.x, It.y))]
-│ It │
-┼────┼
-│  3 │
+┼───┼
+│ 3 │
 ```
 
 `Lift` is implicitly used when a function is broadcast over
@@ -940,9 +932,8 @@ queries.
 
 ```jldoctest
 julia> unitknot[Lift((x=1, y=2)) >> (It.x .+ It.y)]
-│ It │
-┼────┼
-│  3 │
+┼───┼
+│ 3 │
 ```
 
 Functions accepting a `AbstractVector` can be used with plural
@@ -950,20 +941,18 @@ queries.
 
 ```jldoctest
 julia> unitknot[sum.(Lift(1:3))]
-│ It │
-┼────┼
-│  6 │
+┼───┼
+│ 6 │
 ```
 
 Functions returning `AbstractVector` become plural queries.
 
 ```jldoctest
 julia> unitknot[Lift((x='a', y='c')) >> Lift(:, (It.x, It.y))]
-  │ It │
-──┼────┼
-1 │ a  │
-2 │ b  │
-3 │ c  │
+──┼───┼
+1 │ a │
+2 │ b │
+3 │ c │
 ```
 """
 Lift(f, Xs::Tuple) =
@@ -1041,11 +1030,10 @@ This evaluates `X` elementwise.
 julia> X = Lift('a':'c') >> Count;
 
 julia> unitknot[Lift(1:3) >> Each(X)]
-  │ It │
-──┼────┼
-1 │  3 │
-2 │  3 │
-3 │  3 │
+──┼───┼
+1 │ 3 │
+2 │ 3 │
+3 │ 3 │
 ```
 
 Compare this with the query without `Each`.
@@ -1054,9 +1042,8 @@ Compare this with the query without `Each`.
 julia> X = Lift('a':'c') >> Count;
 
 julia> unitknot[Lift(1:3) >> X]
-│ It │
-┼────┼
-│  9 │
+┼───┼
+│ 9 │
 ```
 """
 Each(X) = Query(Each, X)
@@ -1195,9 +1182,8 @@ With unlabeled fields, ordinal labels (A, B, ...) can be used.
 
 ```jldoctest
 julia> unitknot[Lift((1,2)) >> It.B]
-│ It │
-┼────┼
-│  2 │
+┼───┼
+│ 2 │
 ```
 """
 Get(name) =
@@ -1335,9 +1321,8 @@ julia> unitknot[Keep(:x => 2) >> It.x]
 
 ```jldoctest
 julia> unitknot[Lift(1) >> Keep(:x => 2) >> (It .+ It.x)]
-│ It │
-┼────┼
-│  3 │
+┼───┼
+│ 3 │
 ```
 """
 Keep(P, Qs...) =
@@ -1372,9 +1357,8 @@ added by a set of queries.
 
 ```jldoctest
 julia> unitknot[Given(:x => 2, It.x .+ 1)]
-│ It │
-┼────┼
-│  3 │
+┼───┼
+│ 3 │
 ```
 """
 Given(P, Xs...) =
@@ -1424,6 +1408,14 @@ function assemble_count(p::Pipeline)
     cover(q)
 end
 
+function assemble_exists(p::Pipeline)
+    p = uncover(p)
+    q = chain_of(p,
+                 block_not_empty(),
+    ) |> designate(source(p), Bool)
+    cover(q)
+end
+
 """
     Count(X) :: Query
 
@@ -1434,9 +1426,8 @@ produced by `X`.
 julia> X = Lift('a':'c');
 
 julia> unitknot[Count(X)]
-│ It │
-┼────┼
-│  3 │
+┼───┼
+│ 3 │
 ```
 
 ---
@@ -1449,9 +1440,8 @@ In the query form, `Count` emits the number of elements in its input.
 julia> X = Lift('a':'c');
 
 julia> unitknot[X >> Count]
-│ It │
-┼────┼
-│  3 │
+┼───┼
+│ 3 │
 ```
 
 To limit the scope of aggregation, use `Each`.
@@ -1460,11 +1450,10 @@ To limit the scope of aggregation, use `Each`.
 julia> X = Lift('a':'c');
 
 julia> unitknot[Lift(1:3) >> Each(X >> Count)]
-  │ It │
-──┼────┼
-1 │  3 │
-2 │  3 │
-3 │  3 │
+──┼───┼
+1 │ 3 │
+2 │ 3 │
+3 │ 3 │
 ```
 """
 Count(X) =
@@ -1479,6 +1468,64 @@ function Count(env::Environment, p::Pipeline, X)
 end
 
 """
+    Exists(X) :: Query
+
+In the combinator form, `Exists(X)` emits a boolean testing if `X` produces any elements.
+
+```jldoctest
+julia> X = Lift('a':'c');
+
+julia> unitknot[Exists(X)]
+┼──────┼
+│ true │
+```
+
+When the query argument `X` is empty, `Exists(X)` produces `false`.
+
+```jldoctest
+julia> X = Lift([]);
+
+julia> unitknot[Exists(X)]
+┼───────┼
+│ false │
+```
+
+---
+
+    Each(X >> Exists) :: Query
+
+In the query form, `Exists` emits a boolean testing if its input has any elements.
+
+```jldoctest
+julia> X = Lift('a':'c');
+
+julia> unitknot[X >> Exists]
+┼──────┼
+│ true │
+```
+
+When the query input is empty, `Exists` produces `false`.
+
+```jldoctest
+julia> X = Lift([]);
+
+julia> unitknot[X >> Exists]
+┼───────┼
+│ false │
+```
+"""
+Exists(X) =
+    Query(Exists, X)
+
+Lift(::typeof(Exists)) =
+    Then(Exists)
+
+function Exists(env::Environment, p::Pipeline, X)
+    x = assemble(env, target_pipe(p), X)
+    compose(p, assemble_exists(x))
+end
+
+"""
     Sum(X) :: Query
 
 In the combinator form, `Sum(X)` emits the sum of elements
@@ -1488,18 +1535,16 @@ produced by `X`.
 julia> X = Lift(1:3);
 
 julia> unitknot[Sum(X)]
-│ It │
-┼────┼
-│  6 │
+┼───┼
+│ 6 │
 ```
 
 The `Sum` of an empty input is `0`.
 
 ```jldoctest
 julia> unitknot[Sum(Int[])]
-│ It │
-┼────┼
-│  0 │
+┼───┼
+│ 0 │
 ```
 
 ---
@@ -1512,9 +1557,8 @@ In the query form, `Sum` emits the sum of input elements.
 julia> X = Lift(1:3);
 
 julia> unitknot[X >> Sum]
-│ It │
-┼────┼
-│  6 │
+┼───┼
+│ 6 │
 ```
 """
 Sum(X) =
@@ -1533,17 +1577,15 @@ elements produced by `X`.
 julia> X = Lift(1:3);
 
 julia> unitknot[Max(X)]
-│ It │
-┼────┼
-│  3 │
+┼───┼
+│ 3 │
 ```
 
 The `Max` of an empty input is empty.
 
 ```jldoctest
 julia> unitknot[Max(Int[])]
-│ It │
-┼────┼
+(empty)
 ```
 
 ---
@@ -1556,9 +1598,8 @@ In the query form, `Max` finds the maximum of its input elements.
 julia> X = Lift(1:3);
 
 julia> unitknot[X >> Max]
-│ It │
-┼────┼
-│  3 │
+┼───┼
+│ 3 │
 ```
 """
 Max(X) =
@@ -1577,17 +1618,15 @@ elements produced by `X`.
 julia> X = Lift(1:3);
 
 julia> unitknot[Min(X)]
-│ It │
-┼────┼
-│  1 │
+┼───┼
+│ 1 │
 ```
 
 The `Min` of an empty input is empty.
 
 ```jldoctest
 julia> unitknot[Min(Int[])]
-│ It │
-┼────┼
+(empty)
 ```
 
 ---
@@ -1600,9 +1639,8 @@ In the query form, `Min` finds the minimum of its input elements.
 julia> X = Lift(1:3);
 
 julia> unitknot[X >> Min]
-│ It │
-┼────┼
-│  1 │
+┼───┼
+│ 1 │
 ```
 """
 Min(X) =
@@ -1641,6 +1679,12 @@ translate(mod::Module, ::Val{:count}, (arg,)::Tuple{Any}) =
 
 translate(mod::Module, ::Val{:count}, ::Tuple{}) =
     Then(Count)
+
+translate(mod::Module, ::Val{:exists}, (arg,)::Tuple{Any}) =
+    Exists(translate(mod, arg))
+
+translate(mod::Module, ::Val{:exists}, ::Tuple{}) =
+    Then(Exists)
 
 translate(mod::Module, ::Val{:sum}, (arg,)::Tuple{Any}) =
     Sum(translate(mod, arg))
@@ -1683,11 +1727,10 @@ condition.
 
 ```jldoctest
 julia> unitknot[Lift(1:5) >> Filter(isodd.(It))]
-  │ It │
-──┼────┼
-1 │  1 │
-2 │  3 │
-3 │  5 │
+──┼───┼
+1 │ 1 │
+2 │ 3 │
+3 │ 5 │
 ```
 
 When the predicate query produces an empty output, the condition
@@ -1695,8 +1738,7 @@ is presumed to have failed.
 
 ```jldoctest
 julia> unitknot[Lift('a':'c') >> Filter(missing)]
-│ It │
-┼────┼
+(empty)
 ```
 
 When the predicate produces plural output, the condition succeeds
@@ -1704,11 +1746,10 @@ if at least one output value is `true`.
 
 ```jldoctest
 julia> unitknot[Lift('a':'c') >> Filter([true,false])]
-  │ It │
-──┼────┼
-1 │ a  │
-2 │ b  │
-3 │ c  │
+──┼───┼
+1 │ a │
+2 │ b │
+3 │ c │
 ```
 """
 Filter(X) =
@@ -1721,6 +1762,175 @@ end
 
 translate(mod::Module, ::Val{:filter}, (arg,)::Tuple{Any}) =
     Filter(translate(mod, arg))
+
+
+#
+# First, Last, Nth.
+#
+
+assemble_first(p::Pipeline, inv::Bool=false) =
+    assemble_nth(p, !inv ? 1 : -1, cardinality(target(p))&x0to1)
+
+function assemble_nth(p::Pipeline, n::Int, card::Cardinality=x0to1)
+    elts = elements(target(p))
+    chain_of(
+        p,
+        get_by(n, card),
+    ) |> designate(source(p), BlockOf(elts, card) |> IsFlow)
+end
+
+function assemble_nth(p::Pipeline, n::Pipeline)
+    n = uncover(n)
+    fits(target(n), BlockOf(ValueOf(Int), x1to1)) || error("expected a singular mandatory integer")
+    src = source(p)
+    tgt = BlockOf(elements(target(p)), x0to1) |> IsFlow
+    chain_of(
+        tuple_of(p, n),
+        get_by(),
+    ) |> designate(src, tgt)
+end
+ 
+"""
+    First(X) :: Query
+
+In the combinator form, `First(X)` emits the first element produced by its argument `X`.
+
+```jldoctest
+julia> X = Lift('a':'c');
+
+julia> unitknot[First(X)]
+┼───┼
+│ a │
+```
+---
+
+    Each(X >> First) :: Query
+
+In the query form, `First` emits the first element of its input.
+
+```jldoctest
+julia> X = Lift('a':'c');
+
+julia> unitknot[X >> First]
+┼───┼
+│ a │
+```
+"""
+First(X) = Query(First, X)
+
+"""
+    Last(X) :: Query
+
+In the combinator form, `Last(X)` emits the last element produced by its argument `X`.
+
+```jldoctest
+julia> X = Lift('a':'c');
+
+julia> unitknot[Last(X)]
+┼───┼
+│ c │
+```
+---
+
+    Each(X >> Last) :: Query
+
+In the query form, `Last` emits the last element of its input.
+
+```jldoctest
+julia> X = Lift('a':'c');
+
+julia> unitknot[X >> Last]
+┼───┼
+│ c │
+```
+"""
+Last(X) = Query(Last, X)
+
+"""
+    Nth(X, N) :: Query
+
+In the combinator form, `Nth(X, N)` emits the `N`th element produced by its argument `X`.
+
+```jldoctest
+julia> X = Lift('a':'d');
+
+julia> N = Count(X) .÷ 2;
+
+julia> unitknot[Nth(X, N)]
+┼───┼
+│ b │
+```
+---
+
+    Each(X >> Nth(N)) :: Query
+
+In the query form, `Nth(N)` emits the `N`th element produced by its input.
+
+```jldoctest
+julia> X = Lift('a':'d');
+
+julia> N = Count(X) .÷ 2;
+
+julia> unitknot[X >> Nth(N)]
+┼───┼
+│ b │
+```
+"""
+Nth(X, N) = Query(Nth, X, N)
+
+Lift(::typeof(First)) =
+    Then(First)
+
+Lift(::typeof(Last)) =
+    Then(Last)
+
+Nth(N) = Query(Nth, N)
+
+function First(env::Environment, p::Pipeline, X)
+    x = assemble(env, target_pipe(p), X)
+    compose(p, assemble_first(x))
+end
+
+function Last(env::Environment, p::Pipeline, X)
+    x = assemble(env, target_pipe(p), X)
+    compose(p, assemble_first(x, true))
+end
+
+function Nth(env::Environment, p::Pipeline, X, N::Int)
+    x = assemble(env, target_pipe(p), X)
+    compose(p, assemble_nth(x, N))
+end
+
+function Nth(env::Environment, p::Pipeline, X, N)
+    p0 = target_pipe(p)
+    x = assemble(env, p0, X)
+    n = assemble(env, p0, N)
+    compose(p, assemble_nth(x, n))
+end
+
+Nth(env::Environment, p::Pipeline, N::Int) =
+    assemble_nth(p, N)
+
+Nth(env::Environment, p::Pipeline, N) =
+    assemble_nth(p, assemble(env, source_pipe(p), N))
+
+translate(mod::Module, ::Val{:first}, (arg,)::Tuple{Any}) =
+    First(translate(mod, arg))
+
+translate(mod::Module, ::Val{:first}, ::Tuple{}) =
+    Then(First)
+
+translate(mod::Module, ::Val{:last}, (arg,)::Tuple{Any}) =
+    Last(translate(mod, arg))
+
+translate(mod::Module, ::Val{:last}, ::Tuple{}) =
+    Then(Last)
+
+translate(mod::Module, ::Val{:nth}, args::Tuple{Any,Any}) =
+    Nth(translate.(Ref(mod), args)...)
+
+translate(mod::Module, ::Val{:nth}, (arg,)::Tuple{Any}) =
+    Nth(translate(mod, arg))
 
 
 #
@@ -1755,19 +1965,17 @@ the rest.
 
 ```jldoctest
 julia> unitknot[Lift('a':'c') >> Take(2)]
-  │ It │
-──┼────┼
-1 │ a  │
-2 │ b  │
+──┼───┼
+1 │ a │
+2 │ b │
 ```
 
 `Take(-N)` drops the last `N` elements.
 
 ```jldoctest
 julia> unitknot[Lift('a':'c') >> Take(-2)]
-  │ It │
-──┼────┼
-1 │ a  │
+──┼───┼
+1 │ a │
 ```
 """
 Take(N) =
@@ -1781,19 +1989,17 @@ the rest.
 
 ```jldoctest
 julia> unitknot[Lift('a':'c') >> Drop(2)]
-  │ It │
-──┼────┼
-1 │ c  │
+──┼───┼
+1 │ c │
 ```
 
 `Drop(-N)` takes the last `N` elements.
 
 ```jldoctest
 julia> unitknot[Lift('a':'c') >> Drop(-2)]
-  │ It │
-──┼────┼
-1 │ b  │
-2 │ c  │
+──┼───┼
+1 │ b │
+2 │ c │
 ```
 """
 Drop(N) =
@@ -1834,11 +2040,10 @@ This query produces all distinct elements emitted by `X`.
 
 ```jldoctest
 julia> unitknot[Unique(['a','b','b','c','c','c'])]
-  │ It │
-──┼────┼
-1 │ a  │
-2 │ b  │
-3 │ c  │
+──┼───┼
+1 │ a │
+2 │ b │
+3 │ c │
 ```
 
 ---
@@ -1849,11 +2054,10 @@ In the query form, `Unique` produces all distinct elements of its input.
 
 ```jldoctest
 julia> unitknot[Lift(['a','b','b','c','c','c']) >> Unique]
-  │ It │
-──┼────┼
-1 │ a  │
-2 │ b  │
-3 │ c  │
+──┼───┼
+1 │ a │
+2 │ b │
+3 │ c │
 ```
 """
 Unique(X) =

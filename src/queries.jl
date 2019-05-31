@@ -293,13 +293,10 @@ end
 # Adapters.
 #
 
-# The underlying data shape.
+# The underlying data shape below flow and scope containers.
 
 domain(shp::AbstractShape) =
     shp
-
-domain(shp::IsLabeled) =
-    domain(subject(shp))
 
 domain(shp::IsFlow) =
     domain(elements(shp))
@@ -309,9 +306,6 @@ domain(shp::IsScope) =
 
 replace_domain(shp::AbstractShape, f) =
     f isa AbstractShape ? f : f(shp)
-
-replace_domain(shp::IsLabeled, f) =
-    replace_subject(shp, sub -> replace_domain(sub, f))
 
 replace_domain(shp::IsFlow, f) =
     replace_elements(shp, elts -> replace_domain(elts, f))
@@ -374,7 +368,9 @@ end
 
 function uncover(src::IsFlow)
     p = uncover(elements(src))
-    tgt = replace_domain(target(p), dom -> BlockOf(dom, cardinality(src)))
+    lbl = getlabel(p, nothing)
+    p = relabel(p, nothing)
+    tgt = relabel(replace_domain(target(p), dom -> BlockOf(dom, cardinality(src))), lbl)
     with_elements(p) |> designate(src, tgt)
 end
 
@@ -751,7 +747,7 @@ end
 function assemble_collect(p, x)
     p = as_record(p)
     src = elements(target(p))
-    dom = domain(src)
+    dom = deannotate(domain(src))
     dom isa TupleOf || error("expected a record; got\n$(syntaxof(dom))")
     x = uncover(x)
     x_lbl = getlabel(x, nothing)
@@ -817,7 +813,7 @@ julia> unitknot[Record(:x => 1) >> Collect(:y => 2 .* It.x, :x => nothing)]
 
     Each(X >> Record) :: Query
 
-In the query form, `Collect` appends a field to the origin record.
+In the query form, `Collect` appends a field to the source record.
 
 ```jldoctest
 julia> unitknot[Lift(1) >> Label(:x) >> Collect]
@@ -845,6 +841,96 @@ translate(mod::Module, ::Val{:collect}, args::Tuple) =
 
 translate(mod::Module, ::Val{:collect}, ::Tuple{}) =
     Then(Collect)
+
+
+#
+# Join combinator.
+#
+
+join_pipe(p::Pipeline) =
+    join_pipe(source(p), target(p))
+
+join_pipe(src::AbstractShape, dst::AbstractShape) =
+    trivial_pipe(replace_domain(dst, domain(src)))
+
+function assemble_join(p::Pipeline, x::Pipeline)
+    p = as_record(p)
+    dom = deannotate(domain(target(p)))
+    dom isa TupleOf || error("expected a record; got\n$(syntaxof(dom))")
+    p0 = uncover(source(p))
+    q = assemble_join(target(p), target(p0), x)
+    chain_of(tuple_of(p, p0), q) |> designate(source(p), target(q))
+end
+
+function assemble_join(src::IsFlow, src0::AbstractShape, x::Pipeline)
+    q = assemble_join(elements(src), src0, x)
+    q′ = chain_of(distribute(1), with_elements(q))
+    q′ |> designate(TupleOf(src, src0), replace_elements(src, target(q)))
+end
+
+function assemble_join(src::IsScope, src0::AbstractShape, x::Pipeline)
+    q = assemble_join(column(src), replace_column(src, src0), x)
+    q′ = tuple_of(chain_of(tuple_of(chain_of(column(1), column(1)),
+                                    tuple_of(column(2),
+                                             chain_of(column(1), column(2)))),
+                           q),
+                  chain_of(chain_of(column(1), column(2))))
+    q′ |> designate(TupleOf(src, src0), replace_column(src, target(q)))
+end
+
+function assemble_join(src::AbstractShape, src0::AbstractShape, x::Pipeline)
+    dom = deannotate(domain(src))::TupleOf
+    x = uncover(x)
+    x_lbl = getlabel(x, nothing)
+    x = relabel(x, nothing)
+    cols = Pipeline[]
+    col_shps = AbstractShape[]
+    lbls = Symbol[]
+    for i in 1:width(dom)
+        lbl = label(dom, i)
+        lbl != x_lbl || continue
+        col = lookup(src, i)
+        push!(cols, chain_of(column(1), col))
+        push!(col_shps, target(col))
+        if lbl == ordinal_label(i)
+            lbl = ordinal_label(length(cols))
+        end
+        push!(lbls, lbl)
+    end
+    push!(cols, chain_of(column(2), x))
+    push!(col_shps, target(x))
+    push!(lbls, x_lbl !== nothing ? x_lbl : ordinal_label(length(cols)))
+    tgt = TupleOf(lbls, col_shps)
+    lbl = getlabel(src, nothing)
+    if lbl !== nothing
+        tgt = relabel(tgt, lbl)
+    end
+    tuple_of(lbls, cols) |> designate(TupleOf(src, src0), tgt)
+end
+
+"""
+    Join(X) :: Query
+
+`Join(X)` evaluates `X` in the source context and adds it
+as a field to the input record.
+
+```jldoctest
+julia> unitknot[Record(:x => 1) >> Each(Record(:y => 2 .* It.x) >> Join(It.x))]
+│ y  x │
+┼──────┼
+│ 2  1 │
+```
+"""
+Join(X) =
+    Query(Join, X)
+
+function Join(env::Environment, p::Pipeline, X)
+    x = assemble(env, join_pipe(p), X)
+    assemble_join(p, x)
+end
+
+translate(mod::Module, ::Val{:join}, (arg,)::Tuple{Any}) =
+    Join(translate(mod, arg))
 
 
 #

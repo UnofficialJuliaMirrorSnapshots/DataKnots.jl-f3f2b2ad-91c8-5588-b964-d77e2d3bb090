@@ -16,13 +16,16 @@ makedocs(
     format = Documenter.HTML(prettyurls=("CI" in keys(ENV))),
     pages = [
         "Home" => "index.md",
-        "Manual" => [
-            "overview.md",
+        "Queries for Data Analysts" => "overview.md",
+        "Tutorials" => [
+            "highlypaid.md"
+        ],
+        "Reference Manual" => [
+            "primer.md",
             "tutorial.md",
             "reference.md",
         ],
-        "Concepts" => [
-            "primer.md",
+        "Implementer's Guide" => [
             "vectors.md",
             "pipelines.md",
             "shapes.md",

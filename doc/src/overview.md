@@ -1,437 +1,387 @@
-# Overview
+# Queries for Data Analysts
 
 DataKnots is a toolkit for representing and querying complex
 structured data. It is designed for data analysts and domain
-experts (e.g. accountants, engineers, clinicians) who need to
-build and share domain-specific queries. This overview introduces
-DataKnots and its query algebra.
+experts (e.g. accountants, engineers, researchers) who need to
+build and share domain-specific queries. 
 
-## Answering an Inquiry
+This overview shows how typical query operations can be performed
+upon a simplified in-memory dataset using DataKnot's macro syntax.
 
-To focus our attention, let's discuss a particular inquiry: *Which
-City of Chicago employees are paid more than the average for their
-department?*
+## Data Navigation
 
-Let's use a tiny subset of public data from the City of Chicago.
-It includes employees and their annual salary.
+Consider a tiny cross-section of public data from Chicago,
+represented as nested `Vector` and `NamedTuple` objects.
 
-    using CSV
+    department_data = [
+      (name = "POLICE",
+       employee = [
+        (name = "ANTHONY A", position = "POLICE OFFICER", salary = 72510),
+        (name = "JEFFERY A", position = "SERGEANT", salary = 101442),
+        (name = "NANCY A", position = "POLICE OFFICER", salary = 80016)]),
+      (name = "FIRE",
+       employee = [
+        (name = "DANIEL A", position = "FIREFIGHTER-EMT", salary = 95484),
+        (name = "ROBERT K", position = "FIREFIGHTER-EMT", salary = 103272)])]
 
-    chicago_csv_data = """
-        name,department,position,salary
-        "ANTHONY A","POLICE","POLICE OFFICER",72510
-        "DANIEL A","FIRE","FIRE FIGHTER-EMT",95484
-        "JAMES A","FIRE","FIRE ENGINEER-EMT",103350
-        "JEFFERY A","POLICE","SERGEANT",101442
-        "NANCY A","POLICE","POLICE OFFICER",80016
-        "ROBERT K","FIRE","FIRE FIGHTER-EMT",103272
-        """ |> IOBuffer |> CSV.File
+This hierarchical dataset contains a list of departments, with
+each department containing associated employees.
 
-To query this `chicago_csv_data`, we convert this tabular data to
-a `DataKnot`, or just *knot*, and give it a label `employee`.
+To query this dataset, we convert it into a `DataKnot`, or *knot*.
 
     using DataKnots
 
-    chicago = DataKnot(:employee => chicago_csv_data)
+    chicago = DataKnot(:department => department_data)
 
-Then, to answer this inquiry, we query `chicago` as follows.
+Let's say we want to return the list of department names. We query
+the `chicago` knot with `department.name`.
 
-    using Statistics: mean
-
-    @query chicago begin
-        employee
-        group(department)
-        keep(mean_salary => mean(employee.salary))
-        employee
-        filter(salary > mean_salary)
-    end
+    @query chicago department.name
     #=>
-      │ employee                                         │
-      │ name       department  position           salary │
-    ──┼──────────────────────────────────────────────────┼
-    1 │ JAMES A    FIRE        FIRE ENGINEER-EMT  103350 │
-    2 │ ROBERT K   FIRE        FIRE FIGHTER-EMT   103272 │
-    3 │ JEFFERY A  POLICE      SERGEANT           101442 │
+      │ name   │
+    ──┼────────┼
+    1 │ POLICE │
+    2 │ FIRE   │
     =#
 
-Though this overview we will work towards reconstructing this
-query, showing how an analyst could explore data and independently
-arrive at the query above.
+The dotted notation lets one navigate a hierarchical dataset.
+Let's continue our dataset exploration by listing employee names.
 
-## Basic Queries
-
-DataKnots implements an algebra of queries. This algebra's
-elements, or *queries*, represent relationships among class
-entities and datatypes. Nouns, such as `employee`, `department`,
-and `salary`, are *query primitives*.
-
-Let's query the `chicago` knot to list `employee` records. The
-`@query` macro provides a convenient notation to do this.
-
-    @query chicago employee
-    #=>
-      │ employee                                         │
-      │ name       department  position           salary │
-    ──┼──────────────────────────────────────────────────┼
-    1 │ ANTHONY A  POLICE      POLICE OFFICER      72510 │
-    2 │ DANIEL A   FIRE        FIRE FIGHTER-EMT    95484 │
-    3 │ JAMES A    FIRE        FIRE ENGINEER-EMT  103350 │
-    4 │ JEFFERY A  POLICE      SERGEANT           101442 │
-    5 │ NANCY A    POLICE      POLICE OFFICER      80016 │
-    6 │ ROBERT K   FIRE        FIRE FIGHTER-EMT   103272 │
-    =#
-
-Verbs, such as `group`, `keep`, `mean`, and `filter` are *query
-combinators*. Combinators build new queries from existing ones.
-For example, `count` is a combinator.
-
-    @query chicago count(employee)
-    #=>
-    ┼───┼
-    │ 6 │
-    =#
-
-Query *composition* (`.`) is also a combinator, it applies the
-output of one query as the input to another. The query
-`employee.name` lists all employee names.
-
-    @query chicago employee.name
+    @query chicago department.employee.name
     #=>
       │ name      │
     ──┼───────────┼
     1 │ ANTHONY A │
-    2 │ DANIEL A  │
-    3 │ JAMES A   │
-    4 │ JEFFERY A │
-    5 │ NANCY A   │
-    6 │ ROBERT K  │
+    2 │ JEFFERY A │
+    3 │ NANCY A   │
+    4 │ DANIEL A  │
+    5 │ ROBERT K  │
     =#
 
-Within a multi-line macro block, each individual statement is
-composed with its predecessor. Hence, we could write the query
-above without the period delimiter.
+We could write the query above, without the period delimiter, as a
+multi-line macro block.
 
     @query chicago begin
+        department
         employee
         name
     end
 
-Often it's helpful to see the combined output from correlated
-queries. The *record* combinator, which is delimited with a pair
-of curly braces `{}`, is used to build queries that produce
-parallel results.
+Navigation context matters. For example, `employee` tuples are not
+directly accessible from the root of the knot. When a field label,
+such as `employee`, can't be found, an appropriate error message
+is displayed.
 
-    @query chicago employee{name, salary}
-    #=>
-      │ employee          │
-      │ name       salary │
-    ──┼───────────────────┼
-    1 │ ANTHONY A   72510 │
-    2 │ DANIEL A    95484 │
-    3 │ JAMES A    103350 │
-    4 │ JEFFERY A  101442 │
-    5 │ NANCY A     80016 │
-    6 │ ROBERT K   103272 │
-    =#
-
-Within a `@query` macro, constants, such as `100_000` are query
-primitives. Functions, such as `titlecase`, and operators, such as
-greater-than (`>`), are treated as query combinators. We can label
-each expression with the pair syntax (`=>`).
-
-    @query chicago begin
-        employee
-        {name => titlecase(name), highly_paid => salary > 100_000}
-    end
-    #=>
-      │ employee               │
-      │ name       highly_paid │
-    ──┼────────────────────────┼
-    1 │ Anthony A        false │
-    2 │ Daniel A         false │
-    3 │ James A           true │
-    4 │ Jeffery A         true │
-    5 │ Nancy A          false │
-    6 │ Robert K          true │
-    =#
-
-Combining queries is generative. Since we know that `salary >
-100_000` is a query, so is `filter(salary > 100_000)`.
-
-    @query chicago employee.filter(salary > 100_000)
-    #=>
-      │ employee                                         │
-      │ name       department  position           salary │
-    ──┼──────────────────────────────────────────────────┼
-    1 │ JAMES A    FIRE        FIRE ENGINEER-EMT  103350 │
-    2 │ JEFFERY A  POLICE      SERGEANT           101442 │
-    3 │ ROBERT K   FIRE        FIRE FIGHTER-EMT   103272 │
-    =#
-
-In this section, we have built a query that produces
-highly-compensated employees. More broadly, we've demonstrated how
-an algebra of queries permits us to combine previously proven
-queries in an intuitive way.
-
-Before moving on to the original inquiry, we need to discuss how
-queries see their input.
-
-## What is a DataKnot?
-
-Input and output of queries are serialized as `DataKnot` objects.
-A DataKnot is a container that stores a hierarchy of labeled
-elements, where each element is either a scalar value, such as an
-integer or a string, or a collection of nested elements.
-
-Our `chicago` knot is a hierarchy of three levels: a single
-unlabeled root (shown with a `#`), branch level of `employee`
-elements, and leaf elements `name`, `department`, etc.
-
-```literal
-    1-element DataKnot:
-      #:
-        employee:
-          name: "ANTHONY A"
-          department: "POLICE"
-          position: "POLICE OFFICER"
-          salary: 72510
-        employee:
-          name: "DANIEL A"
-          department: "FIRE"
-          position: "FIRE FIGHTER-EMT"
-          salary: 95484
-        ⋮
-```
-
-The structure of a DataKnot is called its *shape* and can be
-visualized using `show(::DataKnot, as=:shape)`.
-
-    show(as=:shape, chicago)
-    #=>
-    1-element DataKnot:
-      #               1:1
-      └╴employee      0:N
-        ├╴name        String
-        ├╴department  String
-        ├╴position    String
-        └╴salary      Int64
-    =#
-
-When we `show` a knot, its hierarchy is projected to a tabular
-display. For `chicago`, the root element gets its own row with
-`employee` elements packed into a single cell: each `employee` is
-delimited by a semi-colon; and attribute values are separated by a
-comma. For packed cells, such as `employee`, the header shows the
-subordinate fields within a pair of curly braces.
-
-    chicago
-    #=>
-    │ employee{name,department,position,salary}                                   │
-    ┼─────────────────────────────────────────────────────────────────────────────┼
-    │ ANTHONY A, POLICE, POLICE OFFICER, 72510; DANIEL A, FIRE, FIRE FIGHTER-EMT,…│
-    =#
-
-We could contrast this display with the tabular display of the
-knot created by the query `employee{name, salary}`.
-
-    @query chicago employee{name, salary}
-    #=>
-      │ employee          │
-      │ name       salary │
-    ──┼───────────────────┼
-    1 │ ANTHONY A   72510 │
-    2 │ DANIEL A    95484 │
-    3 │ JAMES A    103350 │
-    4 │ JEFFERY A  101442 │
-    5 │ NANCY A     80016 │
-    6 │ ROBERT K   103272 │
-    =#
-
-This particular output knot has a 2-level hierarchy, where the top
-level, labeled `employee`, is plural.
-
-    show(as=:shape, @query chicago employee{name, salary})
-    #=>
-    6-element DataKnot:
-      employee  0:N
-      ├╴name    1:1 × String
-      └╴salary  1:1 × Int64
-    =#
-
-In the next section, we show how these hierarchies can be created
-and collapsed.
-
-## Hierarchical Transformations
-
-DataKnots' combinators implement hierarchical transformations.
-Summary combinators, such as `count`, collapse a subtree into a
-single value. For example, we can compute average salary across
-employees with `mean(employee.salary)`.
-
-    using Statistics: mean
-
-    @query chicago begin
-        mean_salary => mean(employee.salary)
-    end
-    #=>
-    │ mean_salary │
-    ┼─────────────┼
-    │     92679.0 │
-    =#
-
-The `group` combinator introduces a new level in the hierarchy by
-constructing grouping records for each unique element produced by
-its argument. For example, we could `group` employees by
-`department`.
-
-    @query chicago employee.group(department)
-    #=>
-      │ department  employee{name,department,position,salary}                     │
-    ──┼───────────────────────────────────────────────────────────────────────────┼
-    1 │ FIRE        DANIEL A, FIRE, FIRE FIGHTER-EMT, 95484; JAMES A, FIRE, FIRE …│
-    2 │ POLICE      ANTHONY A, POLICE, POLICE OFFICER, 72510; JEFFERY A, POLICE, …│
-    =#
-
-This output is a different hierarchy than the `chicago` knot.
-Unique `department` elements are listed with correlated `employee`
-elements at the same hierarchical level.
-
-    show(as=:shape, @query chicago employee.group(department))
-    #=>
-    2-element DataKnot:
-      #               0:N
-      ├╴department    1:1 × String
-      └╴employee      1:N
-        ├╴name        String
-        ├╴department  String
-        ├╴position    String
-        └╴salary      Int64
-    =#
-
-Once constructed, grouping records can be used as any other input.
-In this next query, we show salaries of employees by department.
-
-    @query chicago begin
-        employee
-        group(department)
-        {department, employee.salary}
-    end
-    #=>
-      │ department  salary                │
-    ──┼───────────────────────────────────┼
-    1 │ FIRE        95484; 103350; 103272 │
-    2 │ POLICE      72510; 101442; 80016  │
-    =#
-
-We can use summary operations relative to grouping records. In
-this next example, `mean(employee.salary)` is computed for each
-department, rather than across all employees.
-
-    @query chicago begin
-        employee
-        group(department)
-        {department, mean_salary => mean(employee.salary)}
-    end
-    #=>
-      │ department  mean_salary │
-    ──┼─────────────────────────┼
-    1 │ FIRE           100702.0 │
-    2 │ POLICE          84656.0 │
-    =#
-
-In this section, we have built a query that computes the average
-employee compensation for each department. Further, we've shown
-how `group` is used to transform hierarchies. Finally, we've
-demonstrated that grouping and summary combinators are
-independent, yet work fluidly together.
-
-We're close to answering our original inquiry. We've built a query
-that filters employees. We've built a query that produces average
-salary by department. We need only connect these queries.
-
-## Contextual Operations
-
-DataKnots' queries are interpreted contextually, relative to the
-input that they receive. We've seen this earlier: depending where
-it is placed, `mean(employee.salary)` can produce either the
-average salary over the entire dataset, or averages within each
-department.
-
-For our inquiry, we need to compare each employee's salary with
-the the average salary. However, we cannot evaluate both `salary`
-and `mean_salary` in the same context.
-
-    @query chicago begin
-        employee
-        {name, salary, mean_salary => mean(employee.salary)}
-    end
+    @query chicago employee
     #-> ERROR: cannot find "employee" ⋮
 
-To evaluate an expression in one context and then use its value in
-a different context, we could use the `keep` combinator. This next
-query computes `mean_salary` relative to the entire dataset, and
-then displays this value in the context of each employee.
+Instead, `employee` tuples can be queried by navigating through
+`department` tuples. When tuples are returned, they are displayed
+as a table.
 
-    @query chicago begin
-        keep(mean_salary => mean(employee.salary))
-        employee
-        {name, salary, mean_salary}
-    end
+    @query chicago department.employee
     #=>
-      │ employee                       │
-      │ name       salary  mean_salary │
-    ──┼────────────────────────────────┼
-    1 │ ANTHONY A   72510      92679.0 │
-    2 │ DANIEL A    95484      92679.0 │
-    3 │ JAMES A    103350      92679.0 │
-    4 │ JEFFERY A  101442      92679.0 │
-    5 │ NANCY A     80016      92679.0 │
-    6 │ ROBERT K   103272      92679.0 │
+      │ employee                           │
+      │ name       position         salary │
+    ──┼────────────────────────────────────┼
+    1 │ ANTHONY A  POLICE OFFICER    72510 │
+    2 │ JEFFERY A  SERGEANT         101442 │
+    3 │ NANCY A    POLICE OFFICER    80016 │
+    4 │ DANIEL A   FIREFIGHTER-EMT   95484 │
+    5 │ ROBERT K   FIREFIGHTER-EMT  103272 │
     =#
 
-However, the inquiry asks us to use average salary *by department*.
-This can be done by composing `employee.group(department)` with
-the previous query.
+## Counting & Context
 
-    @query chicago begin
-        employee
-        group(department)
-        keep(mean_salary => mean(employee.salary))
-        employee
-        {name, salary, mean_salary}
-    end
+To count the number of departments in this `chicago` dataset we
+write the query `count(department)`. Observe that the argument
+provided to `count()`, `department`, is itself a query.
+
+    @query chicago count(department)
     #=>
-      │ employee                       │
-      │ name       salary  mean_salary │
-    ──┼────────────────────────────────┼
-    1 │ DANIEL A    95484     100702.0 │
-    2 │ JAMES A    103350     100702.0 │
-    3 │ ROBERT K   103272     100702.0 │
-    4 │ ANTHONY A   72510      84656.0 │
-    5 │ JEFFERY A  101442      84656.0 │
-    6 │ NANCY A     80016      84656.0 │
+    ┼───┼
+    │ 2 │
     =#
 
-We can then answer our initial inquiry, *which employees are
-paid more than the average for their department?*
+We could also count the total number of employees across all
+departments.
 
-    @query chicago begin
-        employee
-        group(department)
-        keep(mean_salary => mean(employee.salary))
-        employee
-        filter(salary > mean_salary)
-    end
+    @query chicago count(department.employee)
     #=>
-      │ employee                                         │
-      │ name       department  position           salary │
-    ──┼──────────────────────────────────────────────────┼
-    1 │ JAMES A    FIRE        FIRE ENGINEER-EMT  103350 │
-    2 │ ROBERT K   FIRE        FIRE FIGHTER-EMT   103272 │
-    3 │ JEFFERY A  POLICE      SERGEANT           101442 │
+    ┼───┼
+    │ 5 │
     =#
 
-In this section, we've completed our query. The remainder of this
-overview will address specific topics, such as aggregation,
-joining data, cardinality, among others.
+What if we wanted to count employees by department? Using query
+composition (`.`), we can perform `count` in a nested context.
+
+    @query chicago department.count(employee)
+    #=>
+    ──┼───┼
+    1 │ 3 │
+    2 │ 2 │
+    =#
+
+In this output, we see that one department has `3` employees,
+while the other has `2`.
+
+## Records & Filters
+
+Let's improve the previous query by including each department's
+name alongside employee counts. This can be done by constructing a
+record using paired curly brackets `{}`.
+
+    @query chicago department{name, count(employee)}
+    #=>
+      │ department │
+      │ name    #B │
+    ──┼────────────┼
+    1 │ POLICE   3 │
+    2 │ FIRE     2 │
+    =#
+
+To label a record field we use the `Pair` syntax, (`=>`).
+
+    @query chicago department{name, size => count(employee)}
+    #=>
+      │ department   │
+      │ name    size │
+    ──┼──────────────┼
+    1 │ POLICE     3 │
+    2 │ FIRE       2 │
+    =#
+
+Additionally, we could list the employee names associated
+with each of these departments.
+
+    @query chicago begin
+       department
+       { name,
+         size => count(employee),
+         employee_names => employee.name }
+    end
+    #=>
+      │ department                                  │
+      │ name    size  employee_names                │
+    ──┼─────────────────────────────────────────────┼
+    1 │ POLICE     3  ANTHONY A; JEFFERY A; NANCY A │
+    2 │ FIRE       2  DANIEL A; ROBERT K            │
+    =#
+
+In this display `employee_names` is a plural value. Hence the
+output cell for each department is delimited by a semi-colon.
+
+We can extend the previous query to show only departments with
+more than `2` employees.
+
+    @query chicago begin
+       department
+       { name,
+         size => count(employee),
+         employee_names => employee.name }
+       filter(size > 2)
+    end
+    #=>
+      │ department                                  │
+      │ name    size  employee_names                │
+    ──┼─────────────────────────────────────────────┼
+    1 │ POLICE     3  ANTHONY A; JEFFERY A; NANCY A │
+    =#
+
+The argument to `filter` can be any query expression that is valid
+for the current context.
+
+    @query chicago begin
+        department
+        filter(count(employee) < 3)
+        { name,
+          employee_names => employee.name }
+    end
+    #=>
+      │ department               │
+      │ name  employee_names     │
+    ──┼──────────────────────────┼
+    1 │ FIRE  DANIEL A; ROBERT K │
+    =#
+
+With these queries we've seen how to navigate, count, record and
+filter. These operations form the base of our query language.
+
+## Aggregate Queries
+
+So far we've only seen *elementwise* queries which emit an output
+for each of its input elements. Informally, we can see this with
+the query `department.count(employee)`.
+
+    @query chicago department.count(employee)
+    #=>
+    ──┼───┼
+    1 │ 3 │
+    2 │ 2 │
+    =#
+
+In this case, the query `count(employee)` input has two elements,
+one for each department. It it emits output elements for each,
+representing the number of employees for the given department.
+
+Without arguments, `count()` counts the number of input elements
+it receives. These *aggregate* queries produce an output relative
+to their input as a whole.
+
+    @query chicago department.employee.count()
+    #=>
+    ┼───┼
+    │ 5 │
+    =#
+
+We may wish to count employees by department. Contrary to
+expectation, adding parentheses will not change the result.
+
+    @query chicago department.(employee.count())
+    #=>
+    ┼───┼
+    │ 5 │
+    =#
+
+To count employees in *each* department, we use `each()`, which
+evaluates its argument elementwise.
+
+    @query chicago department.each(employee.count())
+    #=>
+    ──┼───┼
+    1 │ 3 │
+    2 │ 2 │
+    =#
+
+Equivalently, we could use `count(employee)`.
+
+    @query chicago department.count(employee)
+    #=>
+    ──┼───┼
+    1 │ 3 │
+    2 │ 2 │
+    =#
+
+Which variant of `count` to use depends upon what is notationally
+convenient: is the count of the input elements requested? or is a
+count of something relative to each input needed?
+
+## Paging Data
+
+Sometimes query results can be quite large. In this case it's
+helpful to `take` or `drop` items from the input. Let's return
+only the first two of the employees.
+
+    @query chicago department.employee.take(2)
+    #=>
+      │ employee                          │
+      │ name       position        salary │
+    ──┼───────────────────────────────────┼
+    1 │ ANTHONY A  POLICE OFFICER   72510 │
+    2 │ JEFFERY A  SERGEANT        101442 │
+    =#
+
+A negative index counts records from the end of the input. So, to
+return all the records but the last two, we write:
+
+    @query chicago department.employee.take(-2)
+    #=>
+      │ employee                          │
+      │ name       position        salary │
+    ──┼───────────────────────────────────┼
+    1 │ ANTHONY A  POLICE OFFICER   72510 │
+    2 │ JEFFERY A  SERGEANT        101442 │
+    3 │ NANCY A    POLICE OFFICER   80016 │
+    =#
+
+To skip the first two records, returning the rest, we use `drop`.
+
+    @query chicago department.employee.drop(2)
+    #=>
+      │ employee                          │
+      │ name      position         salary │
+    ──┼───────────────────────────────────┼
+    1 │ NANCY A   POLICE OFFICER    80016 │
+    2 │ DANIEL A  FIREFIGHTER-EMT   95484 │
+    3 │ ROBERT K  FIREFIGHTER-EMT  103272 │
+    =#
+
+To return the 1st half of the employees in the database, we could
+use `take` with an argument that computes how many to take.
+
+    @query chicago begin
+        department.employee
+        take(count(department.employee) ÷ 2)
+    end
+    #=>
+      │ employee                          │
+      │ name       position        salary │
+    ──┼───────────────────────────────────┼
+    1 │ ANTHONY A  POLICE OFFICER   72510 │
+    2 │ JEFFERY A  SERGEANT        101442 │
+    =#
+
+Unlike `filter`, `take` and `drop` are aggregates because the
+output they generate depend not just upon each input element, but
+also upon the position of that element with respect to the entire
+input collection.
+
+## Grouping Data
+
+So far, we've navigated and counted data by exploiting its
+hierarchical organization. But what if we want a query that isn't
+supported by the existing hierarchy? For example, how could we
+calculate the number of employees for each *position*?
+
+A list of distinct positions could be obtained using `unique`.
+
+    @query chicago department.employee.position.unique()
+    #=>
+      │ position        │
+    ──┼─────────────────┼
+    1 │ FIREFIGHTER-EMT │
+    2 │ POLICE OFFICER  │
+    3 │ SERGEANT        │
+    =#
+
+However, `unique` is not sufficient because positions are not
+associated to the respective employees. To associate employee
+records to their positions, we use `group`.
+
+    @query chicago begin
+         department
+         employee
+         group(position)
+         { position, employee.name }
+    end
+    #=>
+      │ position         name               │
+    ──┼─────────────────────────────────────┼
+    1 │ FIREFIGHTER-EMT  DANIEL A; ROBERT K │
+    2 │ POLICE OFFICER   ANTHONY A; NANCY A │
+    3 │ SERGEANT         JEFFERY A          │
+    =#
+
+The complement of each group is often plural, and in this case,
+elements of from the complement are separated by the semi-colon.
+We could see this by counting employees in each position.
+
+    @query chicago begin
+         department
+         employee
+         group(position)
+         { position, count => count(employee) }
+    end
+    #=>
+      │ position         count │
+    ──┼────────────────────────┼
+    1 │ FIREFIGHTER-EMT      2 │
+    2 │ POLICE OFFICER       2 │
+    3 │ SERGEANT             1 │
+    =#
+
+Here, `group` and `unique` are also aggregate. In particular, the
+output they produce is quite distinct from their input. Generally,
+it's the flexibility of aggregate queries like `group(position)`
+that provide the operational power of this query language.
 
